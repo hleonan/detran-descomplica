@@ -1,0 +1,6 @@
+.env
+node_modules/
+certidoes-emitidas/*.pdf
+certidoes-emitidas/historico.json
+.DS_Store
+*.log
