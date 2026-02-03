@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detran Descomplica - Módulo 1 Melhorado</title>
+    <title>Detran Descomplica</title>
     <style>
         * {
             margin: 0;
@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1000px;
             margin: 0 auto;
         }
 
@@ -32,10 +32,6 @@
         header h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
         }
 
         header p {
@@ -68,14 +64,6 @@
             font-size: 1.5em;
             font-weight: bold;
             color: #333;
-        }
-
-        .status-card.online .value {
-            color: #10b981;
-        }
-
-        .status-card.error .value {
-            color: #ef4444;
         }
 
         .tabs {
@@ -139,7 +127,6 @@
             border: 2px solid #e5e7eb;
             border-radius: 6px;
             font-size: 1em;
-            transition: border-color 0.3s ease;
         }
 
         input[type="text"]:focus,
@@ -147,7 +134,6 @@
         select:focus {
             outline: none;
             border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
         .form-row {
@@ -165,7 +151,6 @@
             font-size: 1em;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
             width: 100%;
         }
 
@@ -177,7 +162,6 @@
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
-            transform: none;
         }
 
         .resultado {
@@ -200,27 +184,6 @@
         .resultado.erro {
             background: #fee2e2;
             border-left: 4px solid #ef4444;
-        }
-
-        .resultado h3 {
-            margin-bottom: 15px;
-            color: #333;
-        }
-
-        .resultado p {
-            margin-bottom: 10px;
-            color: #555;
-            line-height: 1.6;
-        }
-
-        .resultado a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .resultado a:hover {
-            text-decoration: underline;
         }
 
         .loading {
@@ -248,13 +211,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        .file-input-wrapper {
-            position: relative;
-            overflow: hidden;
-            display: inline-block;
-            width: 100%;
-        }
-
         .file-input-label {
             display: flex;
             align-items: center;
@@ -264,47 +220,10 @@
             border-radius: 8px;
             cursor: pointer;
             background: #f9fafb;
-            transition: all 0.3s ease;
         }
 
         .file-input-label:hover {
             background: #f3f4f6;
-            border-color: #764ba2;
-        }
-
-        .file-input-label.dragover {
-            background: #ede9fe;
-            border-color: #764ba2;
-        }
-
-        .file-input-label svg {
-            width: 40px;
-            height: 40px;
-            margin-right: 10px;
-            color: #667eea;
-        }
-
-        .historico {
-            margin-top: 30px;
-        }
-
-        .historico h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-
-        .historico-item {
-            background: #f9fafb;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            border-left: 4px solid #667eea;
-        }
-
-        .historico-item small {
-            color: #999;
-            display: block;
-            margin-top: 5px;
         }
 
         table {
@@ -318,7 +237,6 @@
             padding: 12px;
             text-align: left;
             font-weight: 600;
-            color: #333;
             border-bottom: 2px solid #e5e7eb;
         }
 
@@ -326,73 +244,17 @@
             padding: 12px;
             border-bottom: 1px solid #e5e7eb;
         }
-
-        table tr:hover {
-            background: #f9fafb;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: 600;
-        }
-
-        .badge.pendente {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .badge.pago {
-            background: #d1fae5;
-            color: #065f46;
-        }
-
-        .badge.cancelado {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        @media (max-width: 768px) {
-            header h1 {
-                font-size: 1.8em;
-            }
-
-            .tabs {
-                flex-direction: column;
-            }
-
-            .tab-btn {
-                width: 100%;
-            }
-
-            .form-row {
-                grid-template-columns: 1fr;
-            }
-
-            table {
-                font-size: 0.9em;
-            }
-
-            table th, table td {
-                padding: 8px;
-            }
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>
-                <span>🚗</span>
-                Detran Descomplica
-            </h1>
-            <p>Módulo 1 - Certidão Nada Consta + Pontuação + OCR</p>
+            <h1>🚗 Detran Descomplica</h1>
+            <p>Módulo 1 - Automação Completa</p>
         </header>
 
         <div class="status-bar">
-            <div class="status-card online">
+            <div class="status-card">
                 <h3>Status</h3>
                 <div class="value">🟢 Online</div>
             </div>
@@ -400,479 +262,295 @@
                 <h3>Saldo 2Captcha</h3>
                 <div class="value" id="saldoValue">Carregando...</div>
             </div>
-            <div class="status-card">
-                <h3>Google Vision</h3>
-                <div class="value" id="googleVisionStatus">Carregando...</div>
-            </div>
         </div>
 
         <div class="tabs">
-            <button class="tab-btn active" onclick="abrirAba('certidao')">📋 Certidão Nada Consta</button>
-            <button class="tab-btn" onclick="abrirAba('pontuacao')">📊 Consultar Pontuação</button>
-            <button class="tab-btn" onclick="abrirAba('ocr')">📸 Upload CNH (OCR)</button>
-            <button class="tab-btn" onclick="abrirAba('fluxo')">⚡ Fluxo Completo</button>
+            <button class="tab-btn active" onclick="mostrarAba('certidao')">📄 Certidão</button>
+            <button class="tab-btn" onclick="mostrarAba('pontuacao')">📊 Pontuação</button>
+            <button class="tab-btn" onclick="mostrarAba('ocr')">📸 OCR CNH</button>
+            <button class="tab-btn" onclick="mostrarAba('fluxo')">⚡ Fluxo Completo</button>
         </div>
 
         <!-- ABA 1: Certidão Nada Consta -->
         <div id="certidao" class="tab-content active">
             <h2>Emitir Certidão Nada Consta</h2>
-            <p style="color: #666; margin: 15px 0;">Emita a certidão de nada consta de infrações de trânsito.</p>
-
-            <form onsubmit="emitirCertidao(event)">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="cpf1">CPF</label>
-                        <input type="text" id="cpf1" placeholder="000.000.000-00" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="cnh1">CNH</label>
-                        <input type="text" id="cnh1" placeholder="0000000000" required>
-                    </div>
-                </div>
-                <button type="submit">Emitir Certidão</button>
-            </form>
-
-            <div id="loadingCertidao" class="loading">
-                <div class="spinner"></div>
-                <p>Emitindo certidão... Aguarde (1-2 minutos)</p>
+            <div class="form-group">
+                <label>CPF</label>
+                <input type="text" id="cpf1" placeholder="Digite o CPF">
             </div>
-
-            <div id="resultadoCertidao" class="resultado"></div>
-
-            <div id="historicoCertidoes" class="historico"></div>
+            <div class="form-group">
+                <label>CNH</label>
+                <input type="text" id="cnh1" placeholder="Digite a CNH">
+            </div>
+            <button onclick="emitirCertidao()">Emitir Certidão</button>
+            <div id="resultado1" class="resultado"></div>
         </div>
 
-        <!-- ABA 2: Consultar Pontuação -->
+        <!-- ABA 2: Pontuação/Multas -->
         <div id="pontuacao" class="tab-content">
             <h2>Consultar Pontuação e Multas</h2>
-            <p style="color: #666; margin: 15px 0;">Consulte o histórico completo de multas e pontuação da CNH.</p>
-
-            <form onsubmit="consultarPontuacao(event)">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="cpf2">CPF</label>
-                        <input type="text" id="cpf2" placeholder="000.000.000-00" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="cnh2">CNH</label>
-                        <input type="text" id="cnh2" placeholder="0000000000" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="uf">UF</label>
-                        <select id="uf" required>
-                            <option value="RJ">RJ - Rio de Janeiro</option>
-                            <option value="SP">SP - São Paulo</option>
-                            <option value="MG">MG - Minas Gerais</option>
-                            <option value="BA">BA - Bahia</option>
-                            <option value="SC">SC - Santa Catarina</option>
-                            <option value="PR">PR - Paraná</option>
-                            <option value="RS">RS - Rio Grande do Sul</option>
-                            <option value="DF">DF - Distrito Federal</option>
-                            <option value="GO">GO - Goiás</option>
-                            <option value="MT">MT - Mato Grosso</option>
-                        </select>
-                    </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>CPF</label>
+                    <input type="text" id="cpf2" placeholder="Digite o CPF">
                 </div>
-                <button type="submit">Consultar Pontuação</button>
-            </form>
-
-            <div id="loadingPontuacao" class="loading">
-                <div class="spinner"></div>
-                <p>Consultando pontuação... Aguarde (1-2 minutos)</p>
+                <div class="form-group">
+                    <label>CNH</label>
+                    <input type="text" id="cnh2" placeholder="Digite a CNH">
+                </div>
+                <div class="form-group">
+                    <label>UF</label>
+                    <select id="uf2">
+                        <option value="RJ">Rio de Janeiro (RJ)</option>
+                        <option value="SP">São Paulo (SP)</option>
+                        <option value="MG">Minas Gerais (MG)</option>
+                        <option value="BA">Bahia (BA)</option>
+                        <option value="RS">Rio Grande do Sul (RS)</option>
+                    </select>
+                </div>
             </div>
-
-            <div id="resultadoPontuacao" class="resultado"></div>
+            <button onclick="consultarPontuacao()">Consultar Pontuação</button>
+            <div id="resultado2" class="resultado"></div>
         </div>
 
-        <!-- ABA 3: Upload CNH com OCR -->
+        <!-- ABA 3: OCR CNH -->
         <div id="ocr" class="tab-content">
-            <h2>Upload de CNH com OCR</h2>
-            <p style="color: #666; margin: 15px 0;">Faça upload de uma foto ou PDF da sua CNH. O sistema extrairá automaticamente os dados.</p>
-
-            <form onsubmit="processarOCR(event)">
-                <div class="form-group">
-                    <label>Selecione a imagem da CNH (JPG, PNG ou PDF)</label>
-                    <div class="file-input-wrapper">
-                        <label class="file-input-label" id="dropZone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            <div>
-                                <p><strong>Arraste a imagem aqui</strong></p>
-                                <p style="font-size: 0.9em; color: #999;">ou clique para selecionar</p>
-                            </div>
-                        </label>
-                        <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf" style="display: none;" onchange="atualizarNomeArquivo(event)">
-                    </div>
-                    <small id="nomeArquivo" style="color: #999; margin-top: 10px;"></small>
-                </div>
-                <button type="submit">Processar OCR</button>
-            </form>
-
-            <div id="loadingOCR" class="loading">
-                <div class="spinner"></div>
-                <p>Processando imagem... Aguarde</p>
+            <h2>Extrair Dados da CNH com OCR</h2>
+            <div class="form-group">
+                <label>Upload da CNH (JPG, PNG ou PDF)</label>
+                <label class="file-input-label" id="fileLabel">
+                    <span>📁 Clique ou arraste a imagem da CNH</span>
+                    <input type="file" id="cnhFile" style="display: none;" accept="image/*,.pdf">
+                </label>
             </div>
-
-            <div id="resultadoOCR" class="resultado"></div>
+            <button onclick="processarOCR()">Processar OCR</button>
+            <div id="resultado3" class="resultado"></div>
         </div>
 
         <!-- ABA 4: Fluxo Completo -->
         <div id="fluxo" class="tab-content">
-            <h2>Fluxo Completo</h2>
-            <p style="color: #666; margin: 15px 0;">Faça upload da CNH e emita a certidão automaticamente em um único clique!</p>
-
-            <form onsubmit="executarFluxoCompleto(event)">
-                <div class="form-group">
-                    <label>Selecione a imagem da CNH</label>
-                    <div class="file-input-wrapper">
-                        <label class="file-input-label" id="dropZone2" ondrop="handleDrop2(event)" ondragover="handleDragOver2(event)" ondragleave="handleDragLeave2(event)">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            <div>
-                                <p><strong>Arraste a imagem aqui</strong></p>
-                                <p style="font-size: 0.9em; color: #999;">ou clique para selecionar</p>
-                            </div>
-                        </label>
-                        <input type="file" id="fileInput2" accept=".jpg,.jpeg,.png,.pdf" style="display: none;" onchange="atualizarNomeArquivo2(event)">
-                    </div>
-                    <small id="nomeArquivo2" style="color: #999; margin-top: 10px;"></small>
-                </div>
-                <button type="submit">Executar Fluxo Completo</button>
-            </form>
-
-            <div id="loadingFluxo" class="loading">
-                <div class="spinner"></div>
-                <p>Processando... Aguarde (2-3 minutos)</p>
+            <h2>Fluxo Completo: Upload CNH + Emitir Certidão</h2>
+            <div class="form-group">
+                <label>Upload da CNH</label>
+                <label class="file-input-label" id="fileLabel2">
+                    <span>📁 Clique ou arraste a imagem da CNH</span>
+                    <input type="file" id="cnhFile2" style="display: none;" accept="image/*,.pdf">
+                </label>
             </div>
-
-            <div id="resultadoFluxo" class="resultado"></div>
+            <button onclick="fluxoCompleto()">Executar Fluxo Completo</button>
+            <div id="resultado4" class="resultado"></div>
         </div>
     </div>
 
     <script>
         // Carregar saldo ao iniciar
-        window.addEventListener('load', () => {
+        window.addEventListener('load', function() {
             carregarSaldo();
-            carregarHistorico();
         });
 
-        function abrirAba(abaNome) {
-            // Ocultar todas as abas
-            document.querySelectorAll('.tab-content').forEach(aba => {
-                aba.classList.remove('active');
-            });
+        function carregarSaldo() {
+            fetch('/api/saldo')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('saldoValue').textContent = '$' + (data.saldo || '0');
+                })
+                .catch(e => {
+                    document.getElementById('saldoValue').textContent = 'Erro';
+                    console.error('Erro ao carregar saldo:', e);
+                });
+        }
 
-            // Remover classe active de todos os botões
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-
-            // Mostrar aba selecionada
-            document.getElementById(abaNome).classList.add('active');
-
-            // Adicionar classe active ao botão clicado
+        function mostrarAba(aba) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(aba).classList.add('active');
             event.target.classList.add('active');
         }
 
-        async function carregarSaldo() {
-            try {
-                const response = await fetch('/api/saldo');
-                const data = await response.json();
-                document.getElementById('saldoValue').textContent = `$${data.saldo.toFixed(2)}`;
-                document.getElementById('googleVisionStatus').textContent = '✅ Configurado';
-            } catch (error) {
-                document.getElementById('saldoValue').textContent = 'Erro';
-                console.error('Erro ao carregar saldo:', error);
-            }
-        }
-
-        async function emitirCertidao(event) {
-            event.preventDefault();
-
+        function emitirCertidao() {
             const cpf = document.getElementById('cpf1').value;
             const cnh = document.getElementById('cnh1').value;
 
-            document.getElementById('loadingCertidao').classList.add('show');
-            document.getElementById('resultadoCertidao').classList.remove('show');
-
-            try {
-                const response = await fetch('/api/certidao', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cpf, cnh })
-                });
-
-                const data = await response.json();
-                document.getElementById('loadingCertidao').classList.remove('show');
-
-                const resultado = document.getElementById('resultadoCertidao');
-                if (data.sucesso) {
-                    resultado.classList.add('show', 'sucesso');
-                    resultado.innerHTML = `
-                        <h3>✅ Certidão Emitida com Sucesso!</h3>
-                        <p><strong>Data de Emissão:</strong> ${new Date(data.dataEmissao).toLocaleString('pt-BR')}</p>
-                        <p><a href="${data.arquivo}" download>📥 Baixar Certidão (PDF)</a></p>
-                    `;
-                    carregarHistorico();
-                } else {
-                    resultado.classList.add('show', 'erro');
-                    resultado.innerHTML = `<h3>❌ Erro</h3><p>${data.erro}</p>`;
-                }
-            } catch (error) {
-                document.getElementById('loadingCertidao').classList.remove('show');
-                document.getElementById('resultadoCertidao').classList.add('show', 'erro');
-                document.getElementById('resultadoCertidao').innerHTML = `<h3>❌ Erro</h3><p>${error.message}</p>`;
+            if (!cpf || !cnh) {
+                mostrarResultado(1, 'erro', 'CPF e CNH são obrigatórios');
+                return;
             }
+
+            mostrarCarregando(1);
+
+            fetch('/api/certidao', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cpf, cnh })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    mostrarResultado(1, 'sucesso', 'Certidão emitida com sucesso!<br><a href="' + data.arquivo + '" target="_blank">Baixar PDF</a>');
+                } else {
+                    mostrarResultado(1, 'erro', 'Erro: ' + data.erro);
+                }
+            })
+            .catch(e => mostrarResultado(1, 'erro', 'Erro: ' + e.message));
         }
 
-        async function consultarPontuacao(event) {
-            event.preventDefault();
-
+        function consultarPontuacao() {
             const cpf = document.getElementById('cpf2').value;
             const cnh = document.getElementById('cnh2').value;
-            const uf = document.getElementById('uf').value;
+            const uf = document.getElementById('uf2').value;
 
-            document.getElementById('loadingPontuacao').classList.add('show');
-            document.getElementById('resultadoPontuacao').classList.remove('show');
-
-            try {
-                const response = await fetch('/api/pontuacao', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cpf, cnh, uf })
-                });
-
-                const data = await response.json();
-                document.getElementById('loadingPontuacao').classList.remove('show');
-
-                const resultado = document.getElementById('resultadoPontuacao');
-                if (data.sucesso) {
-                    let tabelaHTML = '<table><thead><tr><th>Data</th><th>Descrição</th><th>Pontos</th><th>Valor</th><th>Status</th></tr></thead><tbody>';
-                    
-                    data.multas.forEach(multa => {
-                        const statusBadge = multa.status.toLowerCase().includes('pend') ? 'pendente' : 
-                                           multa.status.toLowerCase().includes('pag') ? 'pago' : 'cancelado';
-                        tabelaHTML += `
-                            <tr>
-                                <td>${multa.data}</td>
-                                <td>${multa.descricao}</td>
-                                <td>${multa.pontos}</td>
-                                <td>${multa.valor}</td>
-                                <td><span class="badge ${statusBadge}">${multa.status}</span></td>
-                            </tr>
-                        `;
-                    });
-                    
-                    tabelaHTML += '</tbody></table>';
-
-                    resultado.classList.add('show', 'sucesso');
-                    resultado.innerHTML = `
-                        <h3>✅ Consulta de Pontuação</h3>
-                        <p><strong>Pontos Totais:</strong> ${data.resumo.pontosTotais}</p>
-                        <p><strong>Multas Pendentes:</strong> ${data.resumo.multasPendentes}</p>
-                        <p><strong>Situação:</strong> ${data.resumo.situacao}</p>
-                        ${tabelaHTML}
-                    `;
-                } else {
-                    resultado.classList.add('show', 'erro');
-                    resultado.innerHTML = `<h3>❌ Erro</h3><p>${data.erro}</p>`;
-                }
-            } catch (error) {
-                document.getElementById('loadingPontuacao').classList.remove('show');
-                document.getElementById('resultadoPontuacao').classList.add('show', 'erro');
-                document.getElementById('resultadoPontuacao').innerHTML = `<h3>❌ Erro</h3><p>${error.message}</p>`;
+            if (!cpf || !cnh) {
+                mostrarResultado(2, 'erro', 'CPF e CNH são obrigatórios');
+                return;
             }
+
+            mostrarCarregando(2);
+
+            fetch('/api/pontuacao', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cpf, cnh, uf })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    let html = '<h3>Resultado da Consulta</h3>';
+                    html += '<p><strong>Pontos Totais:</strong> ' + data.resumo.pontosTotais + '</p>';
+                    html += '<p><strong>Multas Pendentes:</strong> ' + data.resumo.multasPendentes + '</p>';
+                    html += '<p><strong>Situação:</strong> ' + data.resumo.situacao + '</p>';
+                    
+                    if (data.multas && data.multas.length > 0) {
+                        html += '<table><thead><tr><th>Data</th><th>Descrição</th><th>Pontos</th><th>Valor</th><th>Status</th></tr></thead><tbody>';
+                        data.multas.forEach(m => {
+                            html += '<tr><td>' + m.data + '</td><td>' + m.descricao + '</td><td>' + m.pontos + '</td><td>' + m.valor + '</td><td>' + m.status + '</td></tr>';
+                        });
+                        html += '</tbody></table>';
+                    }
+                    mostrarResultado(2, 'sucesso', html);
+                } else {
+                    mostrarResultado(2, 'erro', 'Erro: ' + data.erro);
+                }
+            })
+            .catch(e => mostrarResultado(2, 'erro', 'Erro: ' + e.message));
         }
 
-        async function processarOCR(event) {
-            event.preventDefault();
-
-            const fileInput = document.getElementById('fileInput');
-            if (!fileInput.files.length) {
-                alert('Selecione um arquivo');
+        function processarOCR() {
+            const file = document.getElementById('cnhFile').files[0];
+            if (!file) {
+                mostrarResultado(3, 'erro', 'Selecione um arquivo');
                 return;
             }
 
             const formData = new FormData();
-            formData.append('cnh', fileInput.files[0]);
+            formData.append('cnh', file);
 
-            document.getElementById('loadingOCR').classList.add('show');
-            document.getElementById('resultadoOCR').classList.remove('show');
+            mostrarCarregando(3);
 
-            try {
-                const response = await fetch('/api/ocr/cnh', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-                document.getElementById('loadingOCR').classList.remove('show');
-
-                const resultado = document.getElementById('resultadoOCR');
+            fetch('/api/ocr/cnh', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
                 if (data.sucesso) {
-                    resultado.classList.add('show', 'sucesso');
-                    resultado.innerHTML = `
-                        <h3>✅ Dados Extraídos com Sucesso!</h3>
-                        <p><strong>Confiança:</strong> ${data.confianca}%</p>
-                        <p><strong>CPF:</strong> ${data.dados.cpf || 'Não detectado'}</p>
-                        <p><strong>CNH:</strong> ${data.dados.cnh || 'Não detectado'}</p>
-                        <p><strong>Nome:</strong> ${data.dados.nome || 'Não detectado'}</p>
-                        <p><strong>Data de Nascimento:</strong> ${data.dados.dataNascimento || 'Não detectado'}</p>
-                        <p><strong>Categoria:</strong> ${data.dados.categoria || 'Não detectado'}</p>
-                        <p><strong>Validade:</strong> ${data.dados.validade || 'Não detectado'}</p>
-                    `;
+                    let html = '<h3>Dados Extraídos</h3>';
+                    html += '<p><strong>CPF:</strong> ' + (data.dados.cpf || 'Não encontrado') + '</p>';
+                    html += '<p><strong>CNH:</strong> ' + (data.dados.cnh || 'Não encontrado') + '</p>';
+                    html += '<p><strong>Nome:</strong> ' + (data.dados.nome || 'Não encontrado') + '</p>';
+                    html += '<p><strong>Confiança:</strong> ' + data.confianca + '%</p>';
+                    mostrarResultado(3, 'sucesso', html);
                 } else {
-                    resultado.classList.add('show', 'erro');
-                    resultado.innerHTML = `<h3>❌ Erro</h3><p>${data.erro}</p>`;
+                    mostrarResultado(3, 'erro', 'Erro: ' + data.erro);
                 }
-            } catch (error) {
-                document.getElementById('loadingOCR').classList.remove('show');
-                document.getElementById('resultadoOCR').classList.add('show', 'erro');
-                document.getElementById('resultadoOCR').innerHTML = `<h3>❌ Erro</h3><p>${error.message}</p>`;
-            }
+            })
+            .catch(e => mostrarResultado(3, 'erro', 'Erro: ' + e.message));
         }
 
-        async function executarFluxoCompleto(event) {
-            event.preventDefault();
-
-            const fileInput = document.getElementById('fileInput2');
-            if (!fileInput.files.length) {
-                alert('Selecione um arquivo');
+        function fluxoCompleto() {
+            const file = document.getElementById('cnhFile2').files[0];
+            if (!file) {
+                mostrarResultado(4, 'erro', 'Selecione um arquivo');
                 return;
             }
 
             const formData = new FormData();
-            formData.append('cnh', fileInput.files[0]);
+            formData.append('cnh', file);
 
-            document.getElementById('loadingFluxo').classList.add('show');
-            document.getElementById('resultadoFluxo').classList.remove('show');
+            mostrarCarregando(4);
 
-            try {
-                const response = await fetch('/api/fluxo-completo', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-                document.getElementById('loadingFluxo').classList.remove('show');
-
-                const resultado = document.getElementById('resultadoFluxo');
+            fetch('/api/fluxo-completo', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
                 if (data.sucesso) {
-                    resultado.classList.add('show', 'sucesso');
-                    resultado.innerHTML = `
-                        <h3>✅ Fluxo Completo Executado!</h3>
-                        <h4>Dados Extraídos (Confiança: ${data.confiancaOCR}%)</h4>
-                        <p><strong>CPF:</strong> ${data.dadosExtraidos.cpf}</p>
-                        <p><strong>CNH:</strong> ${data.dadosExtraidos.cnh}</p>
-                        <p><strong>Nome:</strong> ${data.dadosExtraidos.nome || 'Não detectado'}</p>
-                        <h4>Certidão Emitida</h4>
-                        <p><strong>Data:</strong> ${new Date(data.certidao.dataEmissao).toLocaleString('pt-BR')}</p>
-                        <p><a href="${data.certidao.arquivo}" download>📥 Baixar Certidão (PDF)</a></p>
-                    `;
-                    carregarHistorico();
+                    let html = '<h3>Fluxo Completo Executado com Sucesso!</h3>';
+                    html += '<p><strong>CPF Extraído:</strong> ' + data.dadosExtraidos.cpf + '</p>';
+                    html += '<p><strong>CNH Extraída:</strong> ' + data.dadosExtraidos.cnh + '</p>';
+                    html += '<p><strong>Confiança OCR:</strong> ' + data.confiancaOCR + '%</p>';
+                    html += '<p><strong>Certidão:</strong> <a href="' + data.certidao.arquivo + '" target="_blank">Baixar PDF</a></p>';
+                    mostrarResultado(4, 'sucesso', html);
                 } else {
-                    resultado.classList.add('show', 'erro');
-                    resultado.innerHTML = `<h3>❌ Erro</h3><p>${data.detalhes || data.erro}</p>`;
+                    mostrarResultado(4, 'erro', 'Erro: ' + data.erro);
                 }
-            } catch (error) {
-                document.getElementById('loadingFluxo').classList.remove('show');
-                document.getElementById('resultadoFluxo').classList.add('show', 'erro');
-                document.getElementById('resultadoFluxo').innerHTML = `<h3>❌ Erro</h3><p>${error.message}</p>`;
-            }
+            })
+            .catch(e => mostrarResultado(4, 'erro', 'Erro: ' + e.message));
         }
 
-        function handleDrop(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            document.getElementById('dropZone').classList.remove('dragover');
-            
-            const files = event.dataTransfer.files;
-            if (files.length) {
-                document.getElementById('fileInput').files = files;
-                atualizarNomeArquivo({ target: { files } });
-            }
+        function mostrarResultado(aba, tipo, mensagem) {
+            const el = document.getElementById('resultado' + aba);
+            el.innerHTML = '<h3>' + (tipo === 'sucesso' ? '✓ Sucesso' : '✗ Erro') + '</h3>' + mensagem;
+            el.className = 'resultado show ' + tipo;
         }
 
-        function handleDragOver(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            document.getElementById('dropZone').classList.add('dragover');
+        function mostrarCarregando(aba) {
+            const el = document.getElementById('resultado' + aba);
+            el.innerHTML = '<div class="spinner"></div><p>Processando...</p>';
+            el.className = 'resultado show loading';
         }
 
-        function handleDragLeave(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            document.getElementById('dropZone').classList.remove('dragover');
-        }
+        // Drag and drop para OCR
+        const fileLabel = document.getElementById('fileLabel');
+        const cnhFile = document.getElementById('cnhFile');
 
-        function handleDrop2(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            document.getElementById('dropZone2').classList.remove('dragover');
-            
-            const files = event.dataTransfer.files;
-            if (files.length) {
-                document.getElementById('fileInput2').files = files;
-                atualizarNomeArquivo2({ target: { files } });
-            }
-        }
-
-        function handleDragOver2(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            document.getElementById('dropZone2').classList.add('dragover');
-        }
-
-        function handleDragLeave2(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            document.getElementById('dropZone2').classList.remove('dragover');
-        }
-
-        function atualizarNomeArquivo(event) {
-            const files = event.target.files || event.target.files;
-            if (files.length) {
-                document.getElementById('nomeArquivo').textContent = `Arquivo selecionado: ${files[0].name}`;
-                document.getElementById('fileInput').click = () => {};
-            }
-        }
-
-        function atualizarNomeArquivo2(event) {
-            const files = event.target.files || event.target.files;
-            if (files.length) {
-                document.getElementById('nomeArquivo2').textContent = `Arquivo selecionado: ${files[0].name}`;
-            }
-        }
-
-        function carregarHistorico() {
-            // Simular histórico (em produção, viria do servidor)
-            const historico = localStorage.getItem('historicoCertidoes') || '[]';
-            const items = JSON.parse(historico);
-            
-            if (items.length > 0) {
-                let html = '<h3>📜 Histórico de Certidões</h3>';
-                items.slice(-5).reverse().forEach(item => {
-                    html += `
-                        <div class="historico-item">
-                            <strong>CPF:</strong> ${item.cpf}<br>
-                            <strong>CNH:</strong> ${item.cnh}<br>
-                            <small>${new Date(item.data).toLocaleString('pt-BR')}</small>
-                        </div>
-                    `;
-                });
-                document.getElementById('historicoCertidoes').innerHTML = html;
-            }
-        }
-
-        // Interceptar clique no botão de arquivo
-        document.addEventListener('click', (e) => {
-            if (e.target.closest('.file-input-label')) {
-                const input = e.target.closest('.file-input-wrapper').querySelector('input[type="file"]');
-                input.click();
-            }
+        fileLabel.addEventListener('dragover', e => {
+            e.preventDefault();
+            fileLabel.style.background = '#ede9fe';
         });
+
+        fileLabel.addEventListener('dragleave', () => {
+            fileLabel.style.background = '#f9fafb';
+        });
+
+        fileLabel.addEventListener('drop', e => {
+            e.preventDefault();
+            cnhFile.files = e.dataTransfer.files;
+            fileLabel.style.background = '#f9fafb';
+        });
+
+        fileLabel.addEventListener('click', () => cnhFile.click());
+
+        // Mesmo para fluxo completo
+        const fileLabel2 = document.getElementById('fileLabel2');
+        const cnhFile2 = document.getElementById('cnhFile2');
+
+        fileLabel2.addEventListener('dragover', e => {
+            e.preventDefault();
+            fileLabel2.style.background = '#ede9fe';
+        });
+
+        fileLabel2.addEventListener('dragleave', () => {
+            fileLabel2.style.background = '#f9fafb';
+        });
+
+        fileLabel2.addEventListener('drop', e => {
+            e.preventDefault();
+            cnhFile2.files = e.dataTransfer.files;
+            fileLabel2.style.background = '#f9fafb';
+        });
+
+        fileLabel2.addEventListener('click', () => cnhFile2.click());
     </script>
 </body>
 </html>
