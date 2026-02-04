@@ -1,9 +1,8 @@
 // src/routes/api.js
-const express = require("express");
-const router = express.Router();
+import express from "express";
+import { get2CaptchaBalance } from "../services/twocaptcha.js";
 
-// ✅ caminho correto: routes -> services
-const { get2captchaBalance } = require("../services/twocaptcha");
+const router = express.Router();
 
 // Health da API
 router.get("/health", (req, res) => res.json({ ok: true }));
@@ -12,6 +11,8 @@ router.get("/health", (req, res) => res.json({ ok: true }));
 router.get("/saldo", async (req, res) => {
   try {
     const apiKey = process.env.TWOCAPTCHA_API_KEY;
+
+    // Sem key: não quebra UI
     if (!apiKey) {
       return res.status(200).json({
         saldo: "0.00",
@@ -20,19 +21,19 @@ router.get("/saldo", async (req, res) => {
       });
     }
 
-    const saldo = await get2captchaBalance(apiKey);
+    const saldo = await get2CaptchaBalance(apiKey);
     return res.json({ saldo: String(saldo), stub: false });
   } catch (err) {
     console.error("Erro /api/saldo:", err);
     return res.status(200).json({
       saldo: "0.00",
-      error: err.message || "Erro ao consultar saldo",
+      error: err?.message || "Erro ao consultar saldo",
       stub: true,
     });
   }
 });
 
-// ✅ Stub: pontuação (não derruba UI)
+// Stub: pontuação (não derruba UI)
 router.get("/pontuacao", async (req, res) => {
   return res.json({
     ok: true,
@@ -41,4 +42,4 @@ router.get("/pontuacao", async (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;
