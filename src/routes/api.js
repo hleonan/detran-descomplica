@@ -1,79 +1,40 @@
-import express from "express";
+// src/rotas/api.js
+import express from 'express';
 
 const router = express.Router();
 
-function stub(res, extra = {}) {
-  return res.json({
-    sucesso: false,
-    stub: true,
-    mensagem: "Em construção",
-    ...extra,
-  });
-}
+// ✅ saldo (stub seguro)
+router.get('/saldo', async (req, res) => {
+  try {
+    const key = process.env.TWOCAPTCHA_API_KEY;
+    if (!key) return res.json({ saldo: '0.00', stub: true, erro: 'TWOCAPTCHA_API_KEY não configurada' });
 
-// Saldo 2Captcha (se tiver TWOCAPTCHA_API_KEY, retorna placeholder)
-// Depois a gente implementa de verdade.
-router.get("/saldo", async (req, res) => {
-  const apiKey = process.env.TWOCAPTCHA_API_KEY;
+    const url = `https://2captcha.com/res.php?key=${key}&action=getbalance&json=1`;
+    const r = await fetch(url);
+    const data = await r.json();
 
-  if (!apiKey) {
-    return res.json({ saldo: "0.00", stub: true, erro: "TWOCAPTCHA_API_KEY não configurada" });
+    if (data.status === 1) return res.json({ saldo: String(data.request), stub: false });
+    return res.json({ saldo: '0.00', stub: false, erro: data.request || 'Erro 2captcha' });
+  } catch (e) {
+    return res.json({ saldo: '0.00', stub: true, erro: e.message });
   }
-
-  // STUB: só confirma que a chave existe
-  return res.json({ saldo: "OK", stub: true });
 });
 
-// Certidão (STUB)
-router.post("/certidao", async (req, res) => {
-  const { cpf, cnh } = req.body || {};
-  if (!cpf || !cnh) return stub(res, { erro: "CPF e CNH são obrigatórios" });
-
-  // STUB: devolve um "arquivo" fake só pra UI não quebrar
-  return res.json({
-    sucesso: true,
-    stub: true,
-    arquivo: "/exemplos/certidao-exemplo.pdf",
-  });
+// ✅ STUBS (não quebram a UI)
+router.post('/certidao', (req, res) => {
+  res.json({ sucesso: false, stub: true, erro: 'Em construção: certidão' });
 });
 
-// Pontuação (STUB)
-router.post("/pontuacao", async (req, res) => {
-  const { cpf, cnh, uf } = req.body || {};
-  if (!cpf || !cnh) return stub(res, { erro: "CPF e CNH são obrigatórios" });
-
-  return res.json({
-    sucesso: true,
-    stub: true,
-    resumo: {
-      pontosTotais: 0,
-      multasPendentes: 0,
-      situacao: "SEM DADOS (stub)",
-      uf: uf || "RJ",
-    },
-    multas: [],
-  });
+router.post('/pontuacao', (req, res) => {
+  res.json({ sucesso: false, stub: true, erro: 'Em construção: pontuação/multas' });
 });
 
-// OCR CNH (STUB)
-router.post("/ocr/cnh", async (req, res) => {
-  return res.json({
-    sucesso: true,
-    stub: true,
-    confianca: 0,
-    dados: { cpf: null, cnh: null, nome: null },
-  });
+router.post('/ocr/cnh', (req, res) => {
+  res.json({ sucesso: false, stub: true, erro: 'Em construção: OCR CNH' });
 });
 
-// Fluxo completo (STUB)
-router.post("/fluxo-completo", async (req, res) => {
-  return res.json({
-    sucesso: true,
-    stub: true,
-    dadosExtraidos: { cpf: "000.000.000-00", cnh: "000000000000000" },
-    confiancaOCR: 0,
-    certidao: { arquivo: "/exemplos/certidao-exemplo.pdf" },
-  });
+router.post('/fluxo-completo', (req, res) => {
+  res.json({ sucesso: false, stub: true, erro: 'Em construção: fluxo completo' });
 });
 
 export default router;
