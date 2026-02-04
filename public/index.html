@@ -928,22 +928,6 @@
     window.open(`/api/certidao/${caseId}`, "_blank");
   }
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        alert("Erro: " + (err.error || "Falha ao emitir certidão"));
-        return;
-      }
-
-      // abre PDF
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-
-    } catch (e) {
-      alert("Erro: " + (e.message || e));
-    }
-  }    
-
         // UPLOAD DE ARQUIVO
         document.getElementById('fileUpload')?.addEventListener('change', function(e) {
             if (e.target.files.length > 0) {
