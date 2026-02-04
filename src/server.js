@@ -8,15 +8,14 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// JSON para as rotas /api
 app.use(express.json({ limit: '2mb' }));
 
-// Serve sua interface (pasta "público")
-app.use(express.static(path.join(__dirname, '..', 'público')));
+// Serve interface em /public
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Página principal = index.html
+// Home = index.html
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'público', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 // Health
