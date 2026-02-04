@@ -4,9 +4,26 @@ const router = express.Router();
 
 // ✅ Saldo 2Captcha (stub por enquanto)
 router.get('/saldo', async (req, res) => {
-  // Se você quiser, depois a gente liga no 2Captcha de verdade.
-  res.json({ saldo: "0.00", stub: true });
+  try {
+    const key = process.env.TWOCAPTCHA_API_KEY;
+    if (!key) {
+      return res.status(500).json({ saldo: "0.00", erro: "TWOCAPTCHA_API_KEY não configurada", stub: false });
+    }
+
+    const url = `https://2captcha.com/res.php?key=${encodeURIComponent(key)}&action=getbalance&json=1`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    if (!data || data.status !== 1) {
+      return res.status(500).json({ saldo: "0.00", erro: data?.request || "Erro 2Captcha", stub: false });
+    }
+
+    return res.json({ saldo: data.request, stub: false });
+  } catch (err) {
+    return res.status(500).json({ saldo: "0.00", erro: err.message, stub: false });
+  }
 });
+
 
 // ✅ Certidão (stub)
 router.post('/certidao', async (req, res) => {
