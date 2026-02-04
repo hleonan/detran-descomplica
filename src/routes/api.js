@@ -41,21 +41,18 @@ router.post('/certidao', async (req, res) => {
 
 // ✅ Pontuação (stub)
 router.post('/pontuacao', async (req, res) => {
-  const { cpf, cnh } = req.body || {};
+  const { cpf, cnh, uf } = req.body || {};
+
   if (!cpf || !cnh) {
     return res.status(400).json({ sucesso: false, erro: 'CPF e CNH são obrigatórios' });
   }
 
-  // Retorno fake (mas no formato que sua UI já sabe renderizar)
   return res.json({
-    sucesso: true,
-    stub: true,
-    resumo: {
-      pontosTotais: 0,
-      multasPendentes: 0,
-      situacao: 'Sem dados (stub)'
-    },
-    multas: []
+    sucesso: false,
+    erro: 'Em construção: consulta de pontuação/multas ainda não implementada',
+    stub: false,
+    etapa: 'pontuacao',
+    recebido: { uf: uf || 'RJ' }
   });
 });
 
