@@ -2,8 +2,8 @@
 import express from "express";
 import { get2CaptchaBalance } from "../services/twocaptcha.js";
 import { emitirCertidaoPDF } from "../services/certidao.js";
-import { extractCertidaoTextFromBuffer } from "../services/certidaoParser.js";
-import { classificarCertidao } from "../services/certidaoClassifier.js";
+import { extractCertidaoTextFromBuffer } from "../certidaoParser.js";
+import { classificarCertidao } from "../certidaoClassifier.js";
 
 const router = express.Router();
 
