@@ -40,19 +40,11 @@ router.post('/certidao', async (req, res) => {
 });
 
 // ✅ Pontuação (stub)
-router.post('/pontuacao', async (req, res) => {
-  const { cpf, cnh, uf } = req.body || {};
-
-  if (!cpf || !cnh) {
-    return res.status(400).json({ sucesso: false, erro: 'CPF e CNH são obrigatórios' });
-  }
-
-  return res.json({
+rrouter.get('/pontuacao', (req, res) => {
+  res.json({
     sucesso: false,
-    erro: 'Em construção: consulta de pontuação/multas ainda não implementada',
-    stub: false,
-    etapa: 'pontuacao',
-    recebido: { uf: uf || 'RJ' }
+    erro: 'Em construção: use POST /api/pontuacao (via interface)',
+    stub: true
   });
 });
 
