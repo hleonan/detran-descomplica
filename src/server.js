@@ -1,47 +1,38 @@
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
+// src/server.js
+const express = require("express");
+const path = require("path");
 
-import apiRouter from "./rotas/api.js"; // <-- ajuste se seu api.js estiver em outro lugar
+const apiRouter = require("./routes/api");
 
 const app = express();
 
-// Cloud Run injeta PORT. Se você não usar isso, dá erro.
-const PORT = Number(process.env.PORT || 8080);
+// Cloud Run usa PORT (geralmente 8080)
+const PORT = process.env.PORT || 8080;
 
-// Para resolver __dirname no ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ✅ Pasta pública (tem que ser "public" sem acento)
-const publicDir = path.join(__dirname, "..", "public");
-
-// Middlewares básicos
+// JSON e forms
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Health check
-app.get("/health", (req, res) => res.status(200).send("OK"));
-
-// API Router
+// ✅ API sempre antes do static
 app.use("/api", apiRouter);
 
-// Static
+// ✅ Servir a pasta public no ROOT do site
+// Ex.: public/assets/logo.png -> https://seusite.com/assets/logo.png
+const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));
 
-// Home sempre entrega o index.html
-app.get("/", (req, res) => {
+// ✅ Healthcheck
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
+// ✅ Fallback: qualquer rota que não for /api cai no index.html
+app.get("*", (req, res) => {
+  // não intercepta rotas de API
+  if (req.path.startsWith("/api")) return res.status(404).json({ error: "Not found" });
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
-// (Opcional) fallback pra rotas inexistentes (evita "Not Found" em navegação)
-app.use((req, res) => {
-  // se pedir algo que não existe, volta pro index
-  res.status(200).sendFile(path.join(publicDir, "index.html"));
-});
-
-// Sobe server
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server ON: http://0.0.0.0:${PORT}`);
-  console.log(`✅ publicDir: ${publicDir}`);
+  console.log(`✅ Server rodando na porta ${PORT}`);
 });
