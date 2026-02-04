@@ -954,8 +954,14 @@
 
         // SELECIONAR SERVIÇO CNH
         function selectService(service) {
+            // Se for certidão, abre o PDF guardado
+            if (service === 'certidao') {
+                abrirCertidao();
+                return;
+            }
+            
+            // Outros serviços ainda em desenvolvimento
             const messages = {
-                'certidao': 'Emitindo Certidão Nada Consta...\n\nFluxo em desenvolvimento.',
                 'multas': 'Consultando multas...\n\nFluxo em desenvolvimento.',
                 'suspensao': 'Consultando processos de suspensão...\n\nFluxo em desenvolvimento.',
                 'recurso': 'Preparando recurso de multa...\n\nFluxo em desenvolvimento.'
