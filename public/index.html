@@ -871,30 +871,62 @@
         }
 
         // ENTRADA DE DADOS (AGORA CHAMA A API REAL)
+  async
+  // ENTRADA DE DADOS (TELA 2) -> chama o backend real
   async function handleDataEntry(event) {
     event.preventDefault();
 
-    const cpf = document.getElementById('cpf').value;
-    const cnh = document.getElementById('cnh').value;
+    const cpf = document.getElementById("cpf").value;
+    const cnh = document.getElementById("cnh").value;
 
     if (!validarCPF(cpf)) {
-      alert('CPF inválido! Por favor, verifique.');
+      alert("CPF inválido! Por favor, verifique.");
       return;
     }
 
-    // limpa máscara
-    const cpfDigits = cpf.replace(/\D/g, '');
-    const cnhDigits = cnh.replace(/\D/g, '');
+    const cpfDigits = cpf.replace(/\D/g, "");
+    const cnhDigits = cnh.replace(/\D/g, "");
 
     // feedback simples
-    alert("Aguarde... Gerando a certidão (pode demorar 20 a 60 segundos).");
+    alert("Consultando no DETRAN... pode demorar 20 a 60 segundos.");
 
     try {
-      const resp = await fetch("/api/certidao", {
+      const resp = await fetch("/api/consultar-certidao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits })
+        body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
       });
+
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok || !data.ok) {
+        alert("Erro: " + (data.error || "Falha ao consultar"));
+        return;
+      }
+
+      // guarda o caseId (pra Tela 4 emitir o PDF depois)
+      localStorage.setItem("CASE_ID_CERTIDAO", data.caseId);
+
+      // decide Tela 3 ou Tela 4
+      if (data.temProblemas) {
+        goToScreen3(); // ALERTA
+      } else {
+        goToScreen4(); // pula direto pro menu de serviços
+      }
+    } catch (e) {
+      alert("Erro: " + (e.message || e));
+    }
+  }
+
+  // TELA 4 -> abrir PDF guardado
+  function abrirCertidao() {
+    const caseId = localStorage.getItem("CASE_ID_CERTIDAO");
+    if (!caseId) {
+      alert("Não encontrei uma certidão guardada. Faça a consulta primeiro (Tela 2).");
+      return;
+    }
+    window.open(`/api/certidao/${caseId}`, "_blank");
+  }
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
