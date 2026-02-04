@@ -1,38 +1,37 @@
 // src/server.js
-const express = require("express");
-const path = require("path");
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const apiRouter = require("./routes/api");
+import apiRouter from "./routes/api.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Cloud Run usa PORT (geralmente 8080)
+// Cloud Run injeta PORT (geralmente 8080)
 const PORT = process.env.PORT || 8080;
 
-// JSON e forms
+// JSON para rotas /api
 app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
 
-// ✅ API sempre antes do static
-app.use("/api", apiRouter);
-
-// ✅ Servir a pasta public no ROOT do site
-// Ex.: public/assets/logo.png -> https://seusite.com/assets/logo.png
+// ✅ Pasta certa do front
+// Estrutura: /public/index.html e /public/assets/logo.png
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));
 
-// ✅ Healthcheck
-app.get("/health", (req, res) => {
-  res.status(200).send("OK");
-});
+// ✅ API
+app.use("/api", apiRouter);
 
-// ✅ Fallback: qualquer rota que não for /api cai no index.html
+// ✅ Health (root)
+app.get("/health", (req, res) => res.status(200).send("ok"));
+
+// ✅ Fallback: se não achou rota/arquivo, devolve o index.html (SPA)
 app.get("*", (req, res) => {
-  // não intercepta rotas de API
-  if (req.path.startsWith("/api")) return res.status(404).json({ error: "Not found" });
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server rodando na porta ${PORT}`);
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
