@@ -870,27 +870,47 @@
             return true;
         }
 
-        // ENTRADA DE DADOS
-        function handleDataEntry(event) {
-            event.preventDefault();
-            
-            const cpf = document.getElementById('cpf').value;
-            const cnh = document.getElementById('cnh').value;
-            
-            // Validar CPF
-            if (!validarCPF(cpf)) {
-                alert('CPF inválido! Por favor, verifique.');
-                return;
-            }
-            
-            // Simular consulta
-            console.log('Consultando certidão...', { cpf, cnh });
-            
-            // Simular que encontrou problemas
-            setTimeout(() => {
-                goToScreen3();
-            }, 1000);
-        }
+        // ENTRADA DE DADOS (AGORA CHAMA A API REAL)
+  async function handleDataEntry(event) {
+    event.preventDefault();
+
+    const cpf = document.getElementById('cpf').value;
+    const cnh = document.getElementById('cnh').value;
+
+    if (!validarCPF(cpf)) {
+      alert('CPF inválido! Por favor, verifique.');
+      return;
+    }
+
+    // limpa máscara
+    const cpfDigits = cpf.replace(/\D/g, '');
+    const cnhDigits = cnh.replace(/\D/g, '');
+
+    // feedback simples
+    alert("Aguarde... Gerando a certidão (pode demorar 20 a 60 segundos).");
+
+    try {
+      const resp = await fetch("/api/certidao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert("Erro: " + (err.error || "Falha ao emitir certidão"));
+        return;
+      }
+
+      // abre PDF
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+
+    } catch (e) {
+      alert("Erro: " + (e.message || e));
+    }
+  }    
 
         // UPLOAD DE ARQUIVO
         document.getElementById('fileUpload')?.addEventListener('change', function(e) {
