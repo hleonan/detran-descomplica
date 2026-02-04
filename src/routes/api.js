@@ -1,60 +1,62 @@
 import express from 'express';
-import multer from 'multer';
-
-import { get2CaptchaBalance } from '../services/twocaptcha.js';
-import { emitirCertidaoStub } from '../services/certidao.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
 
-// ✅ saldo 2captcha (front chama /api/saldo)
+// ✅ Saldo 2Captcha (stub por enquanto)
 router.get('/saldo', async (req, res) => {
-  try {
-    const saldo = await get2CaptchaBalance();
-    res.json({ saldo });
-  } catch (err) {
-    res.status(500).json({ saldo: 0, erro: err.message });
-  }
+  // Se você quiser, depois a gente liga no 2Captcha de verdade.
+  res.json({ saldo: "0.00", stub: true });
 });
 
-// ✅ certidão (front chama /api/certidao)
+// ✅ Certidão (stub)
 router.post('/certidao', async (req, res) => {
-  try {
-    const { cpf, cnh } = req.body || {};
-    if (!cpf || !cnh) {
-      return res.status(400).json({ sucesso: false, erro: 'CPF e CNH são obrigatórios' });
-    }
-
-    // Por enquanto é “stub” (base pronta)
-    const result = await emitirCertidaoStub({ cpf, cnh });
-
-    return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ sucesso: false, erro: err.message });
+  const { cpf, cnh } = req.body || {};
+  if (!cpf || !cnh) {
+    return res.status(400).json({ sucesso: false, erro: 'CPF e CNH são obrigatórios' });
   }
+
+  return res.json({
+    sucesso: false,
+    erro: 'Em construção: emissão automática ainda não implementada',
+    stub: true
+  });
 });
 
-// ✅ pontuação (placeholder por enquanto)
+// ✅ Pontuação (stub)
 router.post('/pontuacao', async (req, res) => {
+  const { cpf, cnh } = req.body || {};
+  if (!cpf || !cnh) {
+    return res.status(400).json({ sucesso: false, erro: 'CPF e CNH são obrigatórios' });
+  }
+
+  // Retorno fake (mas no formato que sua UI já sabe renderizar)
   return res.json({
-    sucesso: false,
-    erro: 'Em construção: endpoint /api/pontuacao ainda não implementado no backend'
+    sucesso: true,
+    stub: true,
+    resumo: {
+      pontosTotais: 0,
+      multasPendentes: 0,
+      situacao: 'Sem dados (stub)'
+    },
+    multas: []
   });
 });
 
-// ✅ OCR CNH (placeholder por enquanto)
-router.post('/ocr/cnh', upload.single('cnh'), async (req, res) => {
+// ✅ OCR CNH (stub)
+router.post('/ocr/cnh', async (req, res) => {
   return res.json({
     sucesso: false,
-    erro: 'Em construção: OCR ainda não implementado no backend'
+    erro: 'Em construção: OCR ainda não implementado',
+    stub: true
   });
 });
 
-// ✅ fluxo completo (placeholder por enquanto)
-router.post('/fluxo-completo', upload.single('cnh'), async (req, res) => {
+// ✅ Fluxo completo (stub)
+router.post('/fluxo-completo', async (req, res) => {
   return res.json({
     sucesso: false,
-    erro: 'Em construção: fluxo completo ainda não implementado no backend'
+    erro: 'Em construção: fluxo completo ainda não implementado',
+    stub: true
   });
 });
 
