@@ -2,8 +2,31 @@
 import express from "express";
 import { get2CaptchaBalance } from "../services/twocaptcha.js";
 import { emitirCertidaoPDF } from "../services/certidao.js";
+import { extractCertidaoTextFromBuffer } from "../services/certidaoParser.js";
+import { classificarCertidao } from "../services/certidaoClassifier.js";
 
 const router = express.Router();
+
+/**
+ * "Banco" em memória (MVP)
+ * - Cloud Run pode reiniciar e isso zera
+ * - Serve pra validar o fluxo agora
+ */
+const certidaoStore = new Map(); // caseId -> { pdfBuffer, createdAt, analysis }
+const TTL_MS = 15 * 60 * 1000; // 15 min
+
+function cleanupStore() {
+  const now = Date.now();
+  for (const [caseId, item] of certidaoStore.entries()) {
+    if (!item?.createdAt || now - item.createdAt > TTL_MS) {
+      certidaoStore.delete(caseId);
+    }
+  }
+}
+
+function newCaseId() {
+  return `c_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
 
 // Health da API
 router.get("/health", (req, res) => res.json({ ok: true }));
@@ -33,11 +56,87 @@ router.get("/saldo", async (req, res) => {
   }
 });
 
-// ✅ CERTIDÃO: retorna PDF
+/**
+ * ✅ PRIORIDADE 1 - TELA 2
+ * POST /api/consultar-certidao
+ * Entrada: { cpf, cnh }
+ * Saída: { ok, caseId, temProblemas, status, motivo, flags }
+ */
+router.post("/consultar-certidao", async (req, res) => {
+  try {
+    cleanupStore();
+
+    const { cpf, cnh } = req.body || {};
+    if (!cpf || !cnh) {
+      return res.status(400).json({ ok: false, error: "Informe cpf e cnh" });
+    }
+
+    // 1) Gera PDF (automação)
+    const pdfBuffer = await emitirCertidaoPDF({ cpf, cnh });
+
+    // 2) Extrai texto do PDF e classifica
+    const { normalizedText } = await extractCertidaoTextFromBuffer(pdfBuffer);
+    const analysis = classificarCertidao(normalizedText);
+
+    const temProblemas = analysis.status === "RESTRICAO";
+
+    // 3) Guarda o PDF (MVP em memória)
+    const caseId = newCaseId();
+    certidaoStore.set(caseId, {
+      pdfBuffer,
+      createdAt: Date.now(),
+      analysis,
+    });
+
+    return res.json({
+      ok: true,
+      caseId,
+      temProblemas,
+      status: analysis.status,
+      motivo: analysis.motivo,
+      flags: analysis.flags,
+      ttlMinutos: Math.floor(TTL_MS / 60000),
+    });
+  } catch (err) {
+    console.error("Erro /api/consultar-certidao:", err);
+    return res.status(400).json({
+      ok: false,
+      error: err?.message || "Erro ao consultar certidão",
+    });
+  }
+});
+
+/**
+ * ✅ TELA 4 - Emitir Certidão do PDF já guardado
+ * GET /api/certidao/:caseId  -> devolve PDF
+ */
+router.get("/certidao/:caseId", async (req, res) => {
+  try {
+    cleanupStore();
+
+    const { caseId } = req.params;
+    const item = certidaoStore.get(caseId);
+
+    if (!item?.pdfBuffer) {
+      return res.status(404).json({
+        ok: false,
+        error: "Certidão não encontrada (expirou ou o servidor reiniciou).",
+      });
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="certidao.pdf"');
+    return res.status(200).send(item.pdfBuffer);
+  } catch (err) {
+    console.error("Erro /api/certidao/:caseId:", err);
+    return res.status(400).json({ ok: false, error: err?.message || "Erro" });
+  }
+});
+
+// (Opcional) Mantém sua rota antiga que gera e devolve na hora (pode apagar depois)
 router.post("/certidao", async (req, res) => {
   try {
     const { cpf, cnh } = req.body || {};
-
     const pdfBuffer = await emitirCertidaoPDF({ cpf, cnh });
 
     res.setHeader("Content-Type", "application/pdf");
