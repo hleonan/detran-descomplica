@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import TwoCaptcha from './twoCaptcha.js';
+import TwoCaptcha from './services/TwoCaptchaClass.js';
 
 /**
  * Automação para consultar pontuação/multas no DETRAN-RJ

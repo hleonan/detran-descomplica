@@ -4,6 +4,7 @@ import { get2CaptchaBalance } from "../services/twocaptcha.js";
 import { emitirCertidaoPDF } from "../services/certidao.js";
 import { extractCertidaoTextFromBuffer } from "../certidaoParser.js";
 import { classificarCertidao } from "../certidaoClassifier.js";
+import PontuacaoAutomation from "../pontuacaoAutomation.mjs";
 
 const router = express.Router();
 
@@ -151,7 +152,56 @@ router.post("/certidao", async (req, res) => {
   }
 });
 
-// Stub: pontuação
+/**
+ * ✅ PRIORIDADE 2 - TELA 4
+ * POST /api/consultar-multas
+ * Entrada: { cpf, cnh }
+ * Saída: { ok, multas, resumo, dataConsulta }
+ */
+router.post("/consultar-multas", async (req, res) => {
+  try {
+    const { cpf, cnh } = req.body || {};
+    if (!cpf || !cnh) {
+      return res.status(400).json({ ok: false, error: "Informe cpf e cnh" });
+    }
+
+    const apiKey = process.env.TWOCAPTCHA_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        ok: false,
+        error: "Serviço temporariamente indisponível (CAPTCHA não configurado)",
+      });
+    }
+
+    // Instancia automação
+    const automation = new PontuacaoAutomation(apiKey);
+    
+    // Executa consulta
+    const resultado = await automation.consultarPontuacao(cpf, cnh, "RJ");
+
+    if (!resultado.sucesso) {
+      return res.status(400).json({
+        ok: false,
+        error: resultado.erro || "Erro ao consultar multas",
+      });
+    }
+
+    return res.json({
+      ok: true,
+      multas: resultado.multas || [],
+      resumo: resultado.resumo || {},
+      dataConsulta: resultado.dataConsulta,
+    });
+  } catch (err) {
+    console.error("Erro /api/consultar-multas:", err);
+    return res.status(400).json({
+      ok: false,
+      error: err?.message || "Erro ao consultar multas",
+    });
+  }
+});
+
+// Stub: pontuação (manter para compatibilidade)
 router.get("/pontuacao", async (req, res) => {
   return res.json({
     ok: true,
