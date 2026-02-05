@@ -1,4 +1,8 @@
 // src/routes/api.js
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import OCRExtractor from "../ocrExtractor.mjs";
 import express from "express";
 import { get2CaptchaBalance } from "../services/twocaptcha.js";
 import { emitirCertidaoPDF } from "../services/certidao.js";
@@ -7,6 +11,61 @@ import { classificarCertidao } from "../certidaoClassifier.js";
 import PontuacaoAutomation from "../pontuacaoAutomation.mjs";
 
 const router = express.Router();
+// Upload em memória (Cloud Run-friendly)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const ok = ["application/pdf", "image/jpeg", "image/png"].includes(file.mimetype);
+    if (!ok) return cb(new Error("Tipo inválido. Envie PDF, JPG ou PNG."));
+    cb(null, true);
+  }
+});
+
+// OCR CNH (Imagem -> Vision)
+// OBS: PDF vai ser aceito no upload, mas OCR de PDF é outro fluxo (vou te explicar já já)
+router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Arquivo não enviado." });
+
+    // Aqui, do jeito simples e confiável: OCR só pra imagem
+    if (req.file.mimetype === "application/pdf") {
+      return res.status(400).json({
+        error: "PDF recebido. OCR de PDF precisa de fluxo assíncrono com Google Cloud Storage. Por enquanto, envie foto (JPG/PNG)."
+      });
+    }
+
+    const apiKey = process.env.GOOGLE_VISION_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "GOOGLE_VISION_API_KEY não configurada no servidor." });
+    }
+
+    // Salva temporário em /tmp
+    const ext = req.file.mimetype === "image/png" ? ".png" : ".jpg";
+    const tmpPath = path.join("/tmp", `cnh_upload_${Date.now()}${ext}`);
+    fs.writeFileSync(tmpPath, req.file.buffer);
+
+    const ocr = new OCRExtractor(apiKey);
+    const result = await ocr.extrairDadosCNH(tmpPath);
+
+    // limpa
+    try { fs.unlinkSync(tmpPath); } catch {}
+
+    if (!result?.sucesso) {
+      return res.status(422).json({ error: result?.erro || "Não consegui extrair os dados." });
+    }
+
+    return res.json({
+      cpf: result?.dados?.cpf || null,
+      cnh: result?.dados?.cnh || null,
+      nome: result?.dados?.nome || null,
+      confianca: result?.confianca ?? null
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "Erro interno no OCR." });
+  }
+});
 
 /**
  * "Banco" em memória (MVP)
