@@ -30,7 +30,9 @@ class OCRExtractor {
       const tipoMidia = this.obterTipoMidia(ext);
 
       // Chamar Google Vision API
-      const response = await fetch(this.googleVisionUrl, {
+      if (!this.apiKey) throw new Error("Chave do Google Vision não informada.");
+
+      const response = await fetch(`${this.googleVisionUrl}?key=${this.apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
