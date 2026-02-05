@@ -872,7 +872,8 @@
                         <p class="upload-text">Clique para fazer upload da CNH</p>
                         <p class="upload-hint">Extrairemos os dados automaticamente</p>
                     </div>
-                    <input type="file" id="fileUpload" style="display: none;" accept="image/*">
+                    <input type="file" id="fileUpload" style="display: none;"
+                      accept="application/pdf,image/jpeg,image/jpg,image/png">
 
                     <button type="submit" class="btn-primary">Continuar</button>
                 </form>
@@ -1329,13 +1330,40 @@
     window.open(`/api/certidao/${caseId}`, "_blank");
   }
 
-        // UPLOAD DE ARQUIVO
-        document.getElementById('fileUpload')?.addEventListener('change', function(e) {
-            if (e.target.files.length > 0) {
-                alert(`Arquivo selecionado: ${e.target.files[0].name}\n\nExtraindo dados com OCR...`);
-                // Aqui integraria com Google Vision API
-            }
+    // UPLOAD DE ARQUIVO (OCR)
+    document.getElementById('fileUpload')?.addEventListener('change', async function (e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      // Feedback simples
+      alert(`Arquivo selecionado: ${file.name}\n\nEnviando para OCR...`);
+
+      try {
+        const formData = new FormData();
+        formData.append("doc", file); // tem que bater com o backend: upload.single("doc")
+
+        const resp = await fetch("/api/ocr-cnh", {
+          method: "POST",
+          body: formData
         });
+    
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          alert(data?.error || "Falha no OCR.");
+          return;
+        }
+
+        // Preencher campos da Tela 2
+        if (data?.cpf) document.getElementById("cpf").value = data.cpf;
+        if (data?.cnh) document.getElementById("cnh").value = data.cnh;
+    
+        alert("OCR concluído! Confira CPF e CNH e clique em Continuar.");
+      } catch (err) {
+        alert("Erro de rede ao chamar OCR.");
+        console.error(err);
+      }
+    });
 
         // SELECIONAR SERVIÇO CNH
         function selectService(service) {
