@@ -1331,29 +1331,49 @@
   }
 
     // UPLOAD DE ARQUIVO (OCR)
-    document.getElementById('fileUpload')?.addEventListener('change', async function (e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      // Feedback simples
-      alert(`Arquivo selecionado: ${file.name}\n\nEnviando para OCR...`);
-
-      try {
-        const formData = new FormData();
-        formData.append("doc", file); // tem que bater com o backend: upload.single("doc")
-
-        const resp = await fetch("/api/ocr-cnh", {
-          method: "POST",
-          body: formData
-        });
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const input = document.getElementById("fileUpload");
+      if (!input) {
+        alert("ERRO: não achei o input #fileUpload no HTML.");
+        return;
+      }
     
-        const data = await resp.json();
-
-        if (!resp.ok) {
-          alert(data?.error || "Falha no OCR.");
-          return;
+      input.addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+    
+        alert(`Arquivo selecionado: ${file.name}\nEnviando para OCR...`);
+    
+        try {
+          const formData = new FormData();
+          formData.append("doc", file);
+    
+          const resp = await fetch("/api/ocr-cnh", {
+            method: "POST",
+            body: formData
+          });
+    
+          // Se o servidor não responder JSON, isso quebra — então vamos proteger
+          let data = {};
+          const txt = await resp.text();
+          try { data = JSON.parse(txt); } catch {}
+    
+          if (!resp.ok) {
+            alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
+            return;
+          }
+    
+          if (data?.cpf) document.getElementById("cpf").value = data.cpf;
+          if (data?.cnh) document.getElementById("cnh").value = data.cnh;
+    
+          alert("OCR concluído! Confira CPF e CNH.");
+        } catch (err) {
+          console.error(err);
+          alert("Travou na chamada do servidor (/api/ocr-cnh). Veja o console e os logs do Cloud Run.");
         }
-
+      });
+    });
         // Preencher campos da Tela 2
         if (data?.cpf) document.getElementById("cpf").value = data.cpf;
         if (data?.cnh) document.getElementById("cnh").value = data.cnh;
