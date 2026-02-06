@@ -41,7 +41,9 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --timeout 300 \
-            --set-env-vars "NODE_ENV=production"
+            --set-env-vars "NODE_ENV=production,OCR_BUCKET=detran-descomplica-ocr" \
+            --set-secrets "TWOCAPTCHA_API_KEY=TWOCAPTCHA_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest"
+
 
       - name: Show deployment URL
         run: |
