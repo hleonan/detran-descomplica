@@ -1063,7 +1063,7 @@
     <script>
       // NAVEGAÇÃO ENTRE TELAS
       function showScreen(screenId) {
-        document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+        document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
         document.getElementById(screenId).classList.add("active");
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
@@ -1075,7 +1075,39 @@
       function goToScreen5() { showScreen("screen5"); }
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
     
-      // ENTRADA DE DADOS (TELA 2) -> chama o backend
+      // CPF máscara
+      document.getElementById("cpf")?.addEventListener("input", (e) => {
+        let v = e.target.value.replace(/\D/g, "");
+        if (v.length > 0) {
+          v = v.replace(/(\d{3})(\d)/, "$1.$2");
+          v = v.replace(/(\d{3})(\d)/, "$1.$2");
+          v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+        }
+        e.target.value = v;
+      });
+    
+      // CPF validação
+      function validarCPF(cpf) {
+        cpf = cpf.replace(/\D/g, "");
+        if (cpf.length !== 11) return false;
+        if (/^(\d)\1{10}$/.test(cpf)) return false;
+    
+        let soma = 0, resto;
+        for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i - 1, i)) * (11 - i);
+        resto = (soma * 10) % 11;
+        if (resto === 10 || resto === 11) resto = 0;
+        if (resto !== parseInt(cpf.substring(9, 10))) return false;
+    
+        soma = 0;
+        for (let i = 1; i <= 10; i++) soma += parseInt(cpf.substring(i - 1, i)) * (12 - i);
+        resto = (soma * 10) % 11;
+        if (resto === 10 || resto === 11) resto = 0;
+        if (resto !== parseInt(cpf.substring(10, 11))) return false;
+    
+        return true;
+      }
+    
+      // SUBMIT MANUAL (CPF + CNH)
       async function handleDataEntry(event) {
         event.preventDefault();
     
@@ -1083,7 +1115,7 @@
         const cnh = document.getElementById("cnh").value;
     
         if (!validarCPF(cpf)) {
-          alert("CPF inválido! Por favor, verifique.");
+          alert("CPF inválido!");
           return;
         }
     
@@ -1117,49 +1149,13 @@
         }
       }
     
-      // TELA 4 -> abrir PDF guardado
       function abrirCertidao() {
         const caseId = localStorage.getItem("CASE_ID_CERTIDAO");
-        if (!caseId) {
-          alert("Não encontrei uma certidão guardada. Faça a consulta primeiro (Tela 2).");
-          return;
-        }
+        if (!caseId) return alert("Não encontrei certidão guardada. Faça a consulta primeiro.");
         window.open(`/api/certidao/${caseId}`, "_blank");
       }
     
-      // FORMATAÇÃO DE CPF
-      document.getElementById("cpf")?.addEventListener("input", function (e) {
-        let value = e.target.value.replace(/\D/g, "");
-        if (value.length > 0) {
-          value = value.replace(/(\d{3})(\d)/, "$1.$2");
-          value = value.replace(/(\d{3})(\d)/, "$1.$2");
-          value = value.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-        }
-        e.target.value = value;
-      });
-    
-      // VALIDAÇÃO DE CPF
-      function validarCPF(cpf) {
-        cpf = cpf.replace(/\D/g, "");
-        if (cpf.length !== 11) return false;
-        if (/^(\d)\1{10}$/.test(cpf)) return false;
-    
-        let soma = 0, resto;
-        for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i - 1, i)) * (11 - i);
-        resto = (soma * 10) % 11;
-        if (resto === 10 || resto === 11) resto = 0;
-        if (resto !== parseInt(cpf.substring(9, 10))) return false;
-    
-        soma = 0;
-        for (let i = 1; i <= 10; i++) soma += parseInt(cpf.substring(i - 1, i)) * (12 - i);
-        resto = (soma * 10) % 11;
-        if (resto === 10 || resto === 11) resto = 0;
-        if (resto !== parseInt(cpf.substring(10, 11))) return false;
-    
-        return true;
-      }
-    
-      // UPLOAD DE ARQUIVO (OCR) — SEM <script> DENTRO!
+      // UPLOAD OCR (JPG/PNG faz na hora; PDF vai esperar processamento)
       document.addEventListener("DOMContentLoaded", () => {
         const input = document.getElementById("fileUpload");
         if (!input) return;
@@ -1170,33 +1166,57 @@
     
           alert(`Arquivo selecionado: ${file.name}\nEnviando para OCR...`);
     
-          try {
-            const formData = new FormData();
-            formData.append("doc", file);
+          const formData = new FormData();
+          formData.append("doc", file);
     
-            const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
+          // 1) manda o arquivo
+          const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
     
-            const txt = await resp.text();
-            let data = {};
-            try { data = JSON.parse(txt); } catch {}
+          const txt = await resp.text();
+          let data = {};
+          try { data = JSON.parse(txt); } catch {}
     
-            if (!resp.ok) {
-              alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
-              return;
-            }
+          if (!resp.ok) {
+            alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
+            return;
+          }
     
+          // Se veio CPF/CNH direto (imagem) -> preenche
+          if (data?.cpf || data?.cnh) {
             if (data?.cpf) document.getElementById("cpf").value = data.cpf;
             if (data?.cnh) document.getElementById("cnh").value = data.cnh;
-    
             alert("OCR concluído! Confira CPF e CNH.");
-          } catch (err) {
-            console.error(err);
-            alert("Erro ao chamar /api/ocr-cnh. Veja os logs do Cloud Run.");
+            return;
+          }
+    
+          // Se for PDF: o backend vai devolver { jobId }
+          if (data?.jobId) {
+            alert("PDF recebido. Processando… aguarde alguns segundos.");
+            // 2) polling simples (até 60s)
+            const start = Date.now();
+            while (Date.now() - start < 60000) {
+              await new Promise(r => setTimeout(r, 2500));
+              const r2 = await fetch(`/api/ocr-cnh/status/${data.jobId}`);
+              const d2 = await r2.json().catch(() => ({}));
+              if (!r2.ok) continue;
+    
+              if (d2.status === "done") {
+                if (d2.cpf) document.getElementById("cpf").value = d2.cpf;
+                if (d2.cnh) document.getElementById("cnh").value = d2.cnh;
+                alert("OCR do PDF concluído! Confira CPF e CNH.");
+                return;
+              }
+              if (d2.status === "error") {
+                alert("Falhou OCR do PDF: " + (d2.error || "erro"));
+                return;
+              }
+            }
+            alert("OCR do PDF demorou demais. Tente novamente ou envie foto (JPG/PNG).");
           }
         });
       });
     
-      // CONSULTAR MULTAS (mantive seu fluxo)
+      // MULTAS
       async function consultarMultas() {
         const cpf = localStorage.getItem("USER_CPF");
         const cnh = localStorage.getItem("USER_CNH");
@@ -1227,26 +1247,55 @@
             totalMultas > 0 ? `Encontramos ${totalMultas} multa(s) registrada(s) em seu nome` : "Nenhuma multa encontrada";
     
           localStorage.setItem("MULTAS_DATA", JSON.stringify(data.multas || []));
-          // Aqui você mantém seu render das multas (se quiser, eu encaixo depois)
+    
           document.getElementById("multas-lista").innerHTML = (totalMultas === 0)
             ? `<div class="multas-empty"><div class="multas-empty-icon">✅</div><h3 class="multas-empty-title">Parabéns!</h3><p class="multas-empty-text">Você não possui multas pendentes.</p></div>`
-            : `<div class="multas-empty"><div class="multas-empty-icon">ℹ️</div><h3 class="multas-empty-title">OK</h3><p class="multas-empty-text">Multas carregadas (render completo pode ficar igual ao seu).</p></div>`;
+            : data.multas.map((multa, index) => `
+                <div class="multa-card">
+                  <div class="multa-header">
+                    <div class="multa-data">📅 ${multa.data || "Data não informada"}</div>
+                    <div class="multa-status ${multa.status === "Pago" ? "status-pago" : "status-pendente"}">${multa.status || "Pendente"}</div>
+                  </div>
+                  <div class="multa-descricao">${multa.descricao || "Descrição não disponível"}</div>
+                  <div class="multa-detalhes">
+                    <div class="multa-detalhe"><div class="detalhe-label">Pontos</div><div class="detalhe-value">${multa.pontos || "0"}</div></div>
+                    <div class="multa-detalhe"><div class="detalhe-label">Valor</div><div class="detalhe-value">${multa.valor || "R$ 0,00"}</div></div>
+                  </div>
+                  <div class="multa-actions">
+                    <button class="btn-recorrer" onclick="recorrerMulta(${index})">⚖️ Recorrer desta Multa</button>
+                    <button class="btn-pagar" onclick="pagarMulta(${index})">💳 Pagar Multa</button>
+                  </div>
+                </div>
+              `).join("");
         } catch (err) {
-          console.error(err);
           document.getElementById("multas-loading").style.display = "none";
           document.getElementById("multas-lista").innerHTML =
-            `<div class="multas-empty"><div class="multas-empty-icon">⚠️</div><h3 class="multas-empty-title">Erro ao Consultar</h3><p class="multas-empty-text">${err.message || "Tente novamente mais tarde."}</p></div>`;
+            `<div class="multas-empty"><div class="multas-empty-icon">⚠️</div><h3 class="multas-empty-title">Erro ao Consultar</h3><p class="multas-empty-text">${err.message || "Tente novamente."}</p></div>`;
         }
+      }
+    
+      function recorrerMulta(index) {
+        const multas = JSON.parse(localStorage.getItem("MULTAS_DATA") || "[]");
+        const multa = multas[index];
+        if (!multa) return alert("Multa não encontrada.");
+        alert(`Recurso em desenvolvimento.\n\nMulta: ${multa.descricao}\nValor: ${multa.valor}`);
+      }
+    
+      function pagarMulta(index) {
+        const multas = JSON.parse(localStorage.getItem("MULTAS_DATA") || "[]");
+        const multa = multas[index];
+        if (!multa) return alert("Multa não encontrada.");
+        alert(`Pagamento em desenvolvimento.\n\nMulta: ${multa.descricao}\nValor: ${multa.valor}`);
       }
     
       // SERVIÇOS
       function selectService(service) {
-        if (service === "certidao") { abrirCertidao(); return; }
+        if (service === "certidao") return abrirCertidao();
         alert("Fluxo em desenvolvimento.");
       }
     
       function selectOtherService(service) {
-        alert(`Serviço selecionado: ${service}\n\nFluxo em desenvolvimento.`);
+        alert(`Serviço selecionado: ${service}\nFluxo em desenvolvimento.`);
       }
     
       function showProfessionalLogin() {
