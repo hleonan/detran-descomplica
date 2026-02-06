@@ -1,7 +1,9 @@
 // src/services/certidao.js
 import { chromium } from "playwright";
 
-const DETRAN_URL =
+const DETRAN_HOME = "https://www.detran.rj.gov.br/";
+const MENU_INFRACOES = "https://www.detran.rj.gov.br/menu/menu-infracoes.html";
+const NADA_CONSTA_URL =
   "https://www.detran.rj.gov.br/infracoes/principais-servicos-infracoes/nada-consta.html";
 
 function onlyDigits(v = "") {
@@ -12,9 +14,25 @@ async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function dumpDebug(page, label) {
+  try {
+    const url = page.url();
+    const title = await page.title().catch(() => "");
+    const html = await page.content().catch(() => "");
+    console.error(`[DETRAN DEBUG] ${label} url=${url} title=${title} htmlSize=${html.length}`);
+
+    const shotPath = `/tmp/detran_${Date.now()}_${label}.png`;
+    await page.screenshot({ path: shotPath, fullPage: true }).catch(() => {});
+    console.error(`[DETRAN DEBUG] screenshot saved at ${shotPath}`);
+
+    console.error(`[DETRAN DEBUG] htmlHead:\n${html.slice(0, 1500)}`);
+  } catch (e) {
+    console.error("[DETRAN DEBUG] dump failed:", e?.message || e);
+  }
+}
+
 // 2Captcha reCAPTCHA v2
 async function solveRecaptchaV2({ apiKey, siteKey, pageUrl }) {
-  // 1) cria task
   const inParams = new URLSearchParams({
     key: apiKey,
     method: "userrecaptcha",
@@ -31,9 +49,8 @@ async function solveRecaptchaV2({ apiKey, siteKey, pageUrl }) {
   }
 
   const requestId = inData.request;
-
-  // 2) poll resultado
   const start = Date.now();
+
   while (true) {
     await sleep(5000);
 
@@ -50,25 +67,62 @@ async function solveRecaptchaV2({ apiKey, siteKey, pageUrl }) {
     if (resData?.status === 1) return resData.request;
 
     const msg = String(resData?.request || "");
-    if (msg !== "CAPCHA_NOT_READY") {
-      throw new Error(`2Captcha res.php erro: ${msg}`);
-    }
+    if (msg !== "CAPCHA_NOT_READY") throw new Error(`2Captcha res.php erro: ${msg}`);
 
-    if (Date.now() - start > 120000) {
-      throw new Error("2Captcha timeout (demorou > 2 min)");
-    }
+    if (Date.now() - start > 120000) throw new Error("2Captcha timeout (demorou > 2 min)");
   }
 }
 
-async function fillFirstMatch(page, selectors, value) {
-  for (const sel of selectors) {
-    const loc = page.locator(sel).first();
-    if (await loc.count()) {
-      await loc.fill(value);
-      return true;
-    }
+async function findRecaptchaSiteKey(page) {
+  // tenta na página
+  let siteKey = await page
+    .evaluate(() => {
+      const el = document.querySelector(".g-recaptcha");
+      return el ? el.getAttribute("data-sitekey") : null;
+    })
+    .catch(() => null);
+
+  if (siteKey) return siteKey;
+
+  // tenta em iframes
+  for (const fr of page.frames()) {
+    siteKey = await fr
+      .evaluate(() => {
+        const el = document.querySelector(".g-recaptcha");
+        return el ? el.getAttribute("data-sitekey") : null;
+      })
+      .catch(() => null);
+    if (siteKey) return siteKey;
   }
-  return false;
+
+  return null;
+}
+
+async function gotoViaMenuInfracoes(page) {
+  // caminho "humano": HOME -> menu infrações -> emitir certidão
+  await page.goto(DETRAN_HOME, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(MENU_INFRACOES, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+  // tenta clicar “Emitir Certidão de Nada Consta” se existir
+  const linkEmitir = page.locator('a:has-text("Emitir Certidão")').first();
+  const count = await linkEmitir.count().catch(() => 0);
+
+  if (count > 0) {
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {}),
+      linkEmitir.click({ timeout: 10000 }).catch(() => {}),
+    ]);
+  } else {
+    // fallback direto
+    await page.goto(NADA_CONSTA_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+  }
+
+  // garante URL final
+  if (!page.url().includes("nada-consta")) {
+    await page.goto(NADA_CONSTA_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+  }
+
+  await page.waitForTimeout(1500);
 }
 
 export async function emitirCertidaoPDF({ cpf, cnh }) {
@@ -87,95 +141,75 @@ export async function emitirCertidaoPDF({ cpf, cnh }) {
   });
 
   try {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
-    await page.goto(DETRAN_URL, { waitUntil: "domcontentloaded" });
-
-    // Preenche CPF/CNH (seletores robustos)
-    const okCpf = await fillFirstMatch(
-      page,
-      [
-        'input[name="cpf"]',
-        "input#cpf",
-        'input[name*="cpf" i]',
-        'input[placeholder*="CPF" i]',
-      ],
-      cpfDigits
-    );
-    if (!okCpf) throw new Error("Não achei o campo CPF na página do DETRAN");
-
-    const okCnh = await fillFirstMatch(
-      page,
-      [
-        'input[name="cnh"]',
-        "input#cnh",
-        'input[name*="cnh" i]',
-        'input[name*="registro" i]',
-        'input[placeholder*="CNH" i]',
-        'input[placeholder*="Registro" i]',
-      ],
-      cnhDigits
-    );
-    if (!okCnh) throw new Error("Não achei o campo CNH/Registro na página do DETRAN");
-
-    // Pega sitekey do reCAPTCHA
-    const siteKey = await page.evaluate(() => {
-      const el = document.querySelector(".g-recaptcha");
-      return el ? el.getAttribute("data-sitekey") : null;
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
     });
 
+    const page = await context.newPage();
+
+    // ✅ abre pelo caminho humano (mais estável)
+    await gotoViaMenuInfracoes(page);
+
+    // ✅ Agora: espere pelos campos REAIS do DETRAN
+    // CPF: id CertidaoCpf
+    // CNH: id CertidaoCnh
+    await page.waitForSelector("#CertidaoCpf", { timeout: 30000 }).catch(async () => {
+      await dumpDebug(page, "no_CertidaoCpf");
+      throw new Error("Não achei o campo CPF (CertidaoCpf) na página do DETRAN");
+    });
+
+    await page.waitForSelector("#CertidaoCnh", { timeout: 30000 }).catch(async () => {
+      await dumpDebug(page, "no_CertidaoCnh");
+      throw new Error("Não achei o campo CNH (CertidaoCnh) na página do DETRAN");
+    });
+
+    // ✅ Preenche com os seletores corretos
+    await page.locator("#CertidaoCpf").first().fill(cpfDigits);
+    await page.locator("#CertidaoCnh").first().fill(cnhDigits);
+
+    // ✅ reCAPTCHA v2: pega sitekey e resolve no 2captcha
+    const siteKey = await findRecaptchaSiteKey(page);
     if (!siteKey) {
-      throw new Error("Não achei o reCAPTCHA (sitekey). Talvez o DETRAN mudou o captcha.");
+      await dumpDebug(page, "no_sitekey");
+      throw new Error("Não achei o sitekey do reCAPTCHA (g-recaptcha).");
     }
 
-    // Resolve no 2Captcha
     const token = await solveRecaptchaV2({
       apiKey,
       siteKey,
-      pageUrl: DETRAN_URL,
+      pageUrl: page.url(),
     });
 
-    // Injeta token no g-recaptcha-response
+    // injeta token
     await page.evaluate((tkn) => {
       const area =
         document.querySelector('textarea[name="g-recaptcha-response"]') ||
         document.querySelector("#g-recaptcha-response");
-
       if (!area) throw new Error("Não achei g-recaptcha-response");
       area.style.display = "block";
       area.value = tkn;
-
-      // dispara eventos pra alguns sites “sentirem” mudança
       area.dispatchEvent(new Event("input", { bubbles: true }));
       area.dispatchEvent(new Event("change", { bubbles: true }));
     }, token);
 
-    // Clica no botão de consultar/emitir (robusto)
-    const buttonCandidates = [
-      'button[type="submit"]',
-      'input[type="submit"]',
-      'button:has-text("Consultar")',
-      'button:has-text("Emitir")',
-      'button:has-text("Gerar")',
-      'a:has-text("Consultar")',
-    ];
-
-    let clicked = false;
-    for (const sel of buttonCandidates) {
-      const loc = page.locator(sel).first();
-      if (await loc.count()) {
-        await loc.click();
-        clicked = true;
-        break;
-      }
+    // ✅ Clica no botão correto
+    const btn = page.locator("#btPesquisar").first();
+    const btnCount = await btn.count().catch(() => 0);
+    if (btnCount === 0) {
+      await dumpDebug(page, "no_btPesquisar");
+      throw new Error("Não achei o botão CONSULTAR (btPesquisar).");
     }
-    if (!clicked) throw new Error("Não achei o botão de consultar/emitir na página do DETRAN");
 
-    // Espera a página do resultado estabilizar
-    await page.waitForLoadState("networkidle", { timeout: 45000 });
+    await Promise.all([
+      page.waitForLoadState("networkidle", { timeout: 60000 }).catch(() => {}),
+      btn.click({ timeout: 10000 }).catch(() => {}),
+    ]);
 
-    // Gera PDF da página “resultado”
+    await page.waitForTimeout(1500);
+
+    // ✅ PDF do resultado
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
