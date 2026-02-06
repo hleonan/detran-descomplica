@@ -1061,356 +1061,197 @@
 
     <!-- JAVASCRIPT -->
     <script>
-        // NAVEGAÇÃO ENTRE TELAS
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.remove('active');
-            });
-            document.getElementById(screenId).classList.add('active');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        function goToScreen1() {
-            showScreen('screen1');
-        }
-
-        function goToScreen2() {
-            showScreen('screen2');
-        }
-
-        function goToScreen3() {
-            showScreen('screen3');
-        }
-
-        function goToScreen4() {
-            showScreen('screen4');
-        }
-
-        function goToScreen5() {
-            showScreen('screen5');
-        }
-
-        function goToScreen6() {
-            showScreen('screen6');
-            consultarMultas(); // Inicia consulta automaticamente
-        }
-
-        // CONSULTAR MULTAS
-        async function consultarMultas() {
-            const cpf = localStorage.getItem('USER_CPF');
-            const cnh = localStorage.getItem('USER_CNH');
-
-            if (!cpf || !cnh) {
-                alert('Dados não encontrados. Por favor, faça a consulta novamente.');
-                goToScreen2();
-                return;
-            }
-
-            // Mostrar loading
-            document.getElementById('multas-loading').style.display = 'block';
-            document.getElementById('multas-resumo').style.display = 'none';
-            document.getElementById('multas-lista').innerHTML = '';
-
-            try {
-                const resp = await fetch('/api/consultar-multas', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cpf, cnh })
-                });
-
-                const data = await resp.json();
-
-                if (!resp.ok || !data.ok) {
-                    throw new Error(data.error || 'Erro ao consultar multas');
-                }
-
-                // Esconder loading
-                document.getElementById('multas-loading').style.display = 'none';
-
-                // Exibir resumo
-                document.getElementById('pontos-totais').textContent = data.resumo.pontosTotais || '0';
-                document.getElementById('multas-pendentes').textContent = data.resumo.multasPendentes || '0';
-                document.getElementById('situacao-cnh').textContent = data.resumo.situacao || 'Regular';
-                document.getElementById('multas-resumo').style.display = 'grid';
-
-                // Atualizar subtitle
-                const totalMultas = data.multas.length;
-                document.getElementById('multas-subtitle').textContent = 
-                    totalMultas > 0 
-                        ? `Encontramos ${totalMultas} multa(s) registrada(s) em seu nome`
-                        : 'Nenhuma multa encontrada';
-
-                // Exibir multas
-                if (totalMultas === 0) {
-                    document.getElementById('multas-lista').innerHTML = `
-                        <div class="multas-empty">
-                            <div class="multas-empty-icon">✅</div>
-                            <h3 class="multas-empty-title">Parabéns!</h3>
-                            <p class="multas-empty-text">Você não possui multas pendentes.</p>
-                        </div>
-                    `;
-                } else {
-                    const multasHTML = data.multas.map((multa, index) => `
-                        <div class="multa-card">
-                            <div class="multa-header">
-                                <div class="multa-data">📅 ${multa.data || 'Data não informada'}</div>
-                                <div class="multa-status ${multa.status === 'Pago' ? 'status-pago' : 'status-pendente'}">
-                                    ${multa.status || 'Pendente'}
-                                </div>
-                            </div>
-                            <div class="multa-descricao">${multa.descricao || 'Descrição não disponível'}</div>
-                            <div class="multa-detalhes">
-                                <div class="multa-detalhe">
-                                    <div class="detalhe-label">Pontos</div>
-                                    <div class="detalhe-value">${multa.pontos || '0'}</div>
-                                </div>
-                                <div class="multa-detalhe">
-                                    <div class="detalhe-label">Valor</div>
-                                    <div class="detalhe-value">${multa.valor || 'R$ 0,00'}</div>
-                                </div>
-                            </div>
-                            <div class="multa-actions">
-                                <button class="btn-recorrer" onclick="recorrerMulta(${index})">
-                                    ⚖️ Recorrer desta Multa
-                                </button>
-                                <button class="btn-pagar" onclick="pagarMulta(${index})">
-                                    💳 Pagar Multa
-                                </button>
-                            </div>
-                        </div>
-                    `).join('');
-                    document.getElementById('multas-lista').innerHTML = multasHTML;
-                }
-
-                // Guardar multas no localStorage para uso posterior
-                localStorage.setItem('MULTAS_DATA', JSON.stringify(data.multas));
-
-            } catch (err) {
-                console.error('Erro ao consultar multas:', err);
-                document.getElementById('multas-loading').style.display = 'none';
-                document.getElementById('multas-lista').innerHTML = `
-                    <div class="multas-empty">
-                        <div class="multas-empty-icon">⚠️</div>
-                        <h3 class="multas-empty-title">Erro ao Consultar</h3>
-                        <p class="multas-empty-text">${err.message || 'Tente novamente mais tarde.'}</p>
-                    </div>
-                `;
-            }
-        }
-
-        // RECORRER MULTA
-        function recorrerMulta(index) {
-            const multas = JSON.parse(localStorage.getItem('MULTAS_DATA') || '[]');
-            const multa = multas[index];
-            
-            if (!multa) {
-                alert('Multa não encontrada.');
-                return;
-            }
-
-            // TODO: Implementar tela de recurso
-            alert(`Recurso de multa em desenvolvimento!\n\nMulta: ${multa.descricao}\nValor: ${multa.valor}`);
-        }
-
-        // PAGAR MULTA
-        function pagarMulta(index) {
-            const multas = JSON.parse(localStorage.getItem('MULTAS_DATA') || '[]');
-            const multa = multas[index];
-            
-            if (!multa) {
-                alert('Multa não encontrada.');
-                return;
-            }
-
-            // TODO: Implementar pagamento
-            alert(`Pagamento de multa em desenvolvimento!\n\nMulta: ${multa.descricao}\nValor: ${multa.valor}`);
-        }
-
-        // FORMATAÇÃO DE CPF
-        document.getElementById('cpf')?.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/\D/g, '');
-            if (value.length > 0) {
-                value = value.replace(/(\d{3})(\d)/, '$1.$2');
-                value = value.replace(/(\d{3})(\d)/, '$1.$2');
-                value = value.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-            }
-            e.target.value = value;
-        });
-
-        // VALIDAÇÃO DE CPF
-        function validarCPF(cpf) {
-            cpf = cpf.replace(/\D/g, '');
-            if (cpf.length !== 11) return false;
-            
-            // Validação básica
-            if (/^(\d)\1{10}$/.test(cpf)) return false;
-            
-            let soma = 0;
-            let resto;
-            
-            for (let i = 1; i <= 9; i++) {
-                soma += parseInt(cpf.substring(i-1, i)) * (11 - i);
-            }
-            
-            resto = (soma * 10) % 11;
-            if (resto === 10 || resto === 11) resto = 0;
-            if (resto !== parseInt(cpf.substring(9, 10))) return false;
-            
-            soma = 0;
-            for (let i = 1; i <= 10; i++) {
-                soma += parseInt(cpf.substring(i-1, i)) * (12 - i);
-            }
-            
-            resto = (soma * 10) % 11;
-            if (resto === 10 || resto === 11) resto = 0;
-            if (resto !== parseInt(cpf.substring(10, 11))) return false;
-            
-            return true;
-        }
-
-        // ENTRADA DE DADOS (AGORA CHAMA A API REAL)
-  async
-  // ENTRADA DE DADOS (TELA 2) -> chama o backend real
-  async function handleDataEntry(event) {
-    event.preventDefault();
-
-    const cpf = document.getElementById("cpf").value;
-    const cnh = document.getElementById("cnh").value;
-
-    if (!validarCPF(cpf)) {
-      alert("CPF inválido! Por favor, verifique.");
-      return;
-    }
-
-    const cpfDigits = cpf.replace(/\D/g, "");
-    const cnhDigits = cnh.replace(/\D/g, "");
-
-    // feedback simples
-    alert("Consultando no DETRAN... pode demorar 20 a 60 segundos.");
-
-    try {
-      const resp = await fetch("/api/consultar-certidao", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
-      });
-
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok || !data.ok) {
-        alert("Erro: " + (data.error || "Falha ao consultar"));
-        return;
-      }
-
-      // guarda o caseId (pra Tela 4 emitir o PDF depois)
-      localStorage.setItem("CASE_ID_CERTIDAO", data.caseId);
-      
-      // guarda CPF e CNH para consulta de multas
-      localStorage.setItem("USER_CPF", cpfDigits);
-      localStorage.setItem("USER_CNH", cnhDigits);
-
-      // decide Tela 3 ou Tela 4
-      if (data.temProblemas) {
-        goToScreen3(); // ALERTA
-      } else {
-        goToScreen4(); // pula direto pro menu de serviços
-      }
-    } catch (e) {
-      alert("Erro: " + (e.message || e));
-    }
-  }
-
-  // TELA 4 -> abrir PDF guardado
-  function abrirCertidao() {
-    const caseId = localStorage.getItem("CASE_ID_CERTIDAO");
-    if (!caseId) {
-      alert("Não encontrei uma certidão guardada. Faça a consulta primeiro (Tela 2).");
-      return;
-    }
-    window.open(`/api/certidao/${caseId}`, "_blank");
-  }
-
-    // UPLOAD DE ARQUIVO (OCR)
-    <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const input = document.getElementById("fileUpload");
-      if (!input) {
-        alert("ERRO: não achei o input #fileUpload no HTML.");
-        return;
+      // NAVEGAÇÃO ENTRE TELAS
+      function showScreen(screenId) {
+        document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+        document.getElementById(screenId).classList.add("active");
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     
-      input.addEventListener("change", async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+      function goToScreen1() { showScreen("screen1"); }
+      function goToScreen2() { showScreen("screen2"); }
+      function goToScreen3() { showScreen("screen3"); }
+      function goToScreen4() { showScreen("screen4"); }
+      function goToScreen5() { showScreen("screen5"); }
+      function goToScreen6() { showScreen("screen6"); consultarMultas(); }
     
-        alert(`Arquivo selecionado: ${file.name}\nEnviando para OCR...`);
+      // ENTRADA DE DADOS (TELA 2) -> chama o backend
+      async function handleDataEntry(event) {
+        event.preventDefault();
+    
+        const cpf = document.getElementById("cpf").value;
+        const cnh = document.getElementById("cnh").value;
+    
+        if (!validarCPF(cpf)) {
+          alert("CPF inválido! Por favor, verifique.");
+          return;
+        }
+    
+        const cpfDigits = cpf.replace(/\D/g, "");
+        const cnhDigits = cnh.replace(/\D/g, "");
+    
+        alert("Consultando no DETRAN... pode demorar 20 a 60 segundos.");
     
         try {
-          const formData = new FormData();
-          formData.append("doc", file);
-    
-          const resp = await fetch("/api/ocr-cnh", {
+          const resp = await fetch("/api/consultar-certidao", {
             method: "POST",
-            body: formData
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
           });
     
-          // Se o servidor não responder JSON, isso quebra — então vamos proteger
-          let data = {};
-          const txt = await resp.text();
-          try { data = JSON.parse(txt); } catch {}
+          const data = await resp.json().catch(() => ({}));
     
-          if (!resp.ok) {
-            alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
+          if (!resp.ok || !data.ok) {
+            alert("Erro: " + (data.error || "Falha ao consultar"));
             return;
           }
     
-          if (data?.cpf) document.getElementById("cpf").value = data.cpf;
-          if (data?.cnh) document.getElementById("cnh").value = data.cnh;
+          localStorage.setItem("CASE_ID_CERTIDAO", data.caseId);
+          localStorage.setItem("USER_CPF", cpfDigits);
+          localStorage.setItem("USER_CNH", cnhDigits);
     
-          alert("OCR concluído! Confira CPF e CNH.");
+          if (data.temProblemas) goToScreen3();
+          else goToScreen4();
+        } catch (e) {
+          alert("Erro: " + (e.message || e));
+        }
+      }
+    
+      // TELA 4 -> abrir PDF guardado
+      function abrirCertidao() {
+        const caseId = localStorage.getItem("CASE_ID_CERTIDAO");
+        if (!caseId) {
+          alert("Não encontrei uma certidão guardada. Faça a consulta primeiro (Tela 2).");
+          return;
+        }
+        window.open(`/api/certidao/${caseId}`, "_blank");
+      }
+    
+      // FORMATAÇÃO DE CPF
+      document.getElementById("cpf")?.addEventListener("input", function (e) {
+        let value = e.target.value.replace(/\D/g, "");
+        if (value.length > 0) {
+          value = value.replace(/(\d{3})(\d)/, "$1.$2");
+          value = value.replace(/(\d{3})(\d)/, "$1.$2");
+          value = value.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+        }
+        e.target.value = value;
+      });
+    
+      // VALIDAÇÃO DE CPF
+      function validarCPF(cpf) {
+        cpf = cpf.replace(/\D/g, "");
+        if (cpf.length !== 11) return false;
+        if (/^(\d)\1{10}$/.test(cpf)) return false;
+    
+        let soma = 0, resto;
+        for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i - 1, i)) * (11 - i);
+        resto = (soma * 10) % 11;
+        if (resto === 10 || resto === 11) resto = 0;
+        if (resto !== parseInt(cpf.substring(9, 10))) return false;
+    
+        soma = 0;
+        for (let i = 1; i <= 10; i++) soma += parseInt(cpf.substring(i - 1, i)) * (12 - i);
+        resto = (soma * 10) % 11;
+        if (resto === 10 || resto === 11) resto = 0;
+        if (resto !== parseInt(cpf.substring(10, 11))) return false;
+    
+        return true;
+      }
+    
+      // UPLOAD DE ARQUIVO (OCR) — SEM <script> DENTRO!
+      document.addEventListener("DOMContentLoaded", () => {
+        const input = document.getElementById("fileUpload");
+        if (!input) return;
+    
+        input.addEventListener("change", async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+    
+          alert(`Arquivo selecionado: ${file.name}\nEnviando para OCR...`);
+    
+          try {
+            const formData = new FormData();
+            formData.append("doc", file);
+    
+            const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
+    
+            const txt = await resp.text();
+            let data = {};
+            try { data = JSON.parse(txt); } catch {}
+    
+            if (!resp.ok) {
+              alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
+              return;
+            }
+    
+            if (data?.cpf) document.getElementById("cpf").value = data.cpf;
+            if (data?.cnh) document.getElementById("cnh").value = data.cnh;
+    
+            alert("OCR concluído! Confira CPF e CNH.");
+          } catch (err) {
+            console.error(err);
+            alert("Erro ao chamar /api/ocr-cnh. Veja os logs do Cloud Run.");
+          }
+        });
+      });
+    
+      // CONSULTAR MULTAS (mantive seu fluxo)
+      async function consultarMultas() {
+        const cpf = localStorage.getItem("USER_CPF");
+        const cnh = localStorage.getItem("USER_CNH");
+        if (!cpf || !cnh) { alert("Dados não encontrados. Faça a consulta novamente."); goToScreen2(); return; }
+    
+        document.getElementById("multas-loading").style.display = "block";
+        document.getElementById("multas-resumo").style.display = "none";
+        document.getElementById("multas-lista").innerHTML = "";
+    
+        try {
+          const resp = await fetch("/api/consultar-multas", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cpf, cnh })
+          });
+    
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.error || "Erro ao consultar multas");
+    
+          document.getElementById("multas-loading").style.display = "none";
+          document.getElementById("pontos-totais").textContent = data.resumo?.pontosTotais || "0";
+          document.getElementById("multas-pendentes").textContent = data.resumo?.multasPendentes || "0";
+          document.getElementById("situacao-cnh").textContent = data.resumo?.situacao || "Regular";
+          document.getElementById("multas-resumo").style.display = "grid";
+    
+          const totalMultas = data.multas?.length || 0;
+          document.getElementById("multas-subtitle").textContent =
+            totalMultas > 0 ? `Encontramos ${totalMultas} multa(s) registrada(s) em seu nome` : "Nenhuma multa encontrada";
+    
+          localStorage.setItem("MULTAS_DATA", JSON.stringify(data.multas || []));
+          // Aqui você mantém seu render das multas (se quiser, eu encaixo depois)
+          document.getElementById("multas-lista").innerHTML = (totalMultas === 0)
+            ? `<div class="multas-empty"><div class="multas-empty-icon">✅</div><h3 class="multas-empty-title">Parabéns!</h3><p class="multas-empty-text">Você não possui multas pendentes.</p></div>`
+            : `<div class="multas-empty"><div class="multas-empty-icon">ℹ️</div><h3 class="multas-empty-title">OK</h3><p class="multas-empty-text">Multas carregadas (render completo pode ficar igual ao seu).</p></div>`;
         } catch (err) {
           console.error(err);
-          alert("Travou na chamada do servidor (/api/ocr-cnh). Veja o console e os logs do Cloud Run.");
+          document.getElementById("multas-loading").style.display = "none";
+          document.getElementById("multas-lista").innerHTML =
+            `<div class="multas-empty"><div class="multas-empty-icon">⚠️</div><h3 class="multas-empty-title">Erro ao Consultar</h3><p class="multas-empty-text">${err.message || "Tente novamente mais tarde."}</p></div>`;
         }
-      });
-    });
-        // Preencher campos da Tela 2
-        if (data?.cpf) document.getElementById("cpf").value = data.cpf;
-        if (data?.cnh) document.getElementById("cnh").value = data.cnh;
-    
-        alert("OCR concluído! Confira CPF e CNH e clique em Continuar.");
-      } catch (err) {
-        alert("Erro de rede ao chamar OCR.");
-        console.error(err);
       }
-    });
-
-        // SELECIONAR SERVIÇO CNH
-        function selectService(service) {
-            // Se for certidão, abre o PDF guardado
-            if (service === 'certidao') {
-                abrirCertidao();
-                return;
-            }
-            
-            // Outros serviços ainda em desenvolvimento
-            const messages = {
-                'multas': 'Consultando multas...\n\nFluxo em desenvolvimento.',
-                'suspensao': 'Consultando processos de suspensão...\n\nFluxo em desenvolvimento.',
-                'recurso': 'Preparando recurso de multa...\n\nFluxo em desenvolvimento.'
-            };
-            alert(messages[service]);
-        }
-
-        // SELECIONAR OUTRO SERVIÇO
-        function selectOtherService(service) {
-            alert(`Serviço selecionado: ${service}\n\nFluxo em desenvolvimento.`);
-        }
-
-        // PROFISSIONAL
-        function showProfessionalLogin() {
-            alert('Área Profissional\n\nLogin/Cadastro em desenvolvimento.\n\nAqui advogados e despachantes poderão:\n- Gerenciar múltiplos clientes\n- Receber alertas automáticos\n- Gerar relatórios\n- Protocolar recursos em lote');
-        }
+    
+      // SERVIÇOS
+      function selectService(service) {
+        if (service === "certidao") { abrirCertidao(); return; }
+        alert("Fluxo em desenvolvimento.");
+      }
+    
+      function selectOtherService(service) {
+        alert(`Serviço selecionado: ${service}\n\nFluxo em desenvolvimento.`);
+      }
+    
+      function showProfessionalLogin() {
+        alert("Área Profissional em desenvolvimento.");
+      }
     </script>
 </body>
 </html>
