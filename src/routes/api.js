@@ -9,7 +9,7 @@ import vision from "@google-cloud/vision";
 
 import OCRExtractor from "../ocrExtractor.mjs";
 import { get2CaptchaBalance } from "../services/twocaptcha.js";
-import { emitirCertidaoPDF } from "../services/certidao.js";
+import { emitirCertidaoPDF } from "../services/certidao_v3.js";
 import { extractCertidaoTextFromBuffer } from "../certidaoParser.js";
 import { classificarCertidao } from "../certidaoClassifier.js";
 import PontuacaoAutomation from "../pontuacaoAutomation.mjs";

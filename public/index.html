@@ -740,6 +740,92 @@
             color: #666;
         }
 
+        /* LOADING MODAL */
+        .loading-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-modal.active {
+            display: flex;
+        }
+
+        .loading-content {
+            background: white;
+            border-radius: 20px;
+            padding: 50px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 30px;
+            border: 5px solid #f0f0f0;
+            border-top: 5px solid #003D7A;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 24px;
+            color: #003D7A;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .loading-message {
+            font-size: 16px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .loading-cancel-btn {
+            background: #6C757D;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .loading-cancel-btn:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
         /* RESPONSIVIDADE */
         @media (max-width: 768px) {
             .hero-title {
@@ -1055,9 +1141,20 @@
                         </div>
                     </div>
                 </div>
-            </div>
+             </div>
+    </div>
+
+    <!-- LOADING MODAL -->
+    <div id="loadingModal" class="loading-modal">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h2 class="loading-title">Por Favor, Aguarde</h2>
+            <p class="loading-message">Estamos consultando sua CNH no DETRAN...<br>Isso pode levar de 20 a 60 segundos.</p>
+            <button class="loading-cancel-btn" onclick="cancelLoading()">X Cancelar</button>
         </div>
     </div>
+
+    <script>
 
     <!-- JAVASCRIPT -->
     <script>
@@ -1122,7 +1219,7 @@
         const cpfDigits = cpf.replace(/\D/g, "");
         const cnhDigits = cnh.replace(/\D/g, "");
     
-        alert("Consultando no DETRAN... pode demorar 20 a 60 segundos.");
+        showLoadingModal();
     
         try {
           const resp = await fetch("/api/consultar-certidao", {
@@ -1132,6 +1229,7 @@
           });
     
           const data = await resp.json().catch(() => ({}));
+          hideLoadingModal();
     
           if (!resp.ok || !data.ok) {
             alert("Erro: " + (data.error || "Falha ao consultar"));
@@ -1145,6 +1243,7 @@
           if (data.temProblemas) goToScreen3();
           else goToScreen4();
         } catch (e) {
+          hideLoadingModal();
           alert("Erro: " + (e.message || e));
         }
       }
@@ -1300,6 +1399,20 @@
     
       function showProfessionalLogin() {
         alert("Área Profissional em desenvolvimento.");
+      }
+
+      // LOADING MODAL
+      function showLoadingModal() {
+        document.getElementById("loadingModal").classList.add("active");
+      }
+
+      function hideLoadingModal() {
+        document.getElementById("loadingModal").classList.remove("active");
+      }
+
+      function cancelLoading() {
+        hideLoadingModal();
+        // Se necessário, você pode adicionar lógica para cancelar a requisição
       }
     </script>
 </body>
