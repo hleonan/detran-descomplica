@@ -1149,12 +1149,12 @@
     <div id="loadingModal" class="loading-modal">
         <div class="loading-content">
             <div class="loading-spinner"></div>
-            <div class="loading-title">Por Favor, Aguarde</div>
-            <div class="loading-message">
+            <div class="loading-title" id="loadingTitle">Por Favor, Aguarde</div>
+            <div class="loading-message" id="loadingMessage">
                 Estamos consultando sua CNH no DETRAN...<br>
                 Isso pode levar de 20 a 60 segundos.
             </div>
-            <button class="loading-cancel-btn" onclick="cancelLoading()">✕ Cancelar</button>
+            <button class="loading-cancel-btn" id="loadingCancelBtn" onclick="cancelLoading()">✕ Cancelar</button>
         </div>
     </div>
 
@@ -1221,33 +1221,12 @@
         const cpfDigits = cpf.replace(/\D/g, "");
         const cnhDigits = cnh.replace(/\D/g, "");
     
-        showLoadingModal();
+        showLoadingModal({
+          title: "Por favor, aguarde",
+          message: "Estamos consultando sua CNH no DETRAN...<br>Isso pode levar de 20 a 60 segundos."
+        });
     
-        try {
-          const resp = await fetch("/api/consultar-certidao", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
-          });
-    
-          const data = await resp.json().catch(() => ({}));
-          hideLoadingModal();
-    
-          if (!resp.ok || !data.ok) {
-            alert("Erro: " + (data.error || "Falha ao consultar"));
-            return;
-          }
-    
-          localStorage.setItem("CASE_ID_CERTIDAO", data.caseId);
-          localStorage.setItem("USER_CPF", cpfDigits);
-          localStorage.setItem("USER_CNH", cnhDigits);
-    
-          if (data.temProblemas) goToScreen3();
-          else goToScreen4();
-        } catch (e) {
-          hideLoadingModal();
-          alert("Erro: " + (e.message || e));
-        }
+        await consultarCertidao({ cpf: cpfDigits, cnh: cnhDigits });
       }
     
       function abrirCertidao() {
@@ -1264,20 +1243,36 @@
         input.addEventListener("change", async (e) => {
           const file = e.target.files?.[0];
           if (!file) return;
-    
-          alert(`Arquivo selecionado: ${file.name}\nEnviando para OCR...`);
-    
+          resetLoadingState();
+          showLoadingModal({
+            title: "Analisando documento",
+            message: "Arquivo sendo analisado e validado para começar a análise."
+          });
+
           const formData = new FormData();
           formData.append("doc", file);
     
           // 1) manda o arquivo
-          const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
+          let resp;
+          try {
+            resp = await fetch("/api/ocr-cnh", {
+              method: "POST",
+              body: formData,
+              signal: setAbortController().signal
+            });
+          } catch (error) {
+            if (isCancelled(error)) return;
+            hideLoadingModal();
+            alert("Não foi possível enviar o arquivo para análise.");
+            return;
+          }
     
           const txt = await resp.text();
           let data = {};
           try { data = JSON.parse(txt); } catch {}
     
           if (!resp.ok) {
+            hideLoadingModal();
             alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
             return;
           }
@@ -1286,16 +1281,16 @@
           if (data?.cpf || data?.cnh) {
             if (data?.cpf) document.getElementById("cpf").value = data.cpf;
             if (data?.cnh) document.getElementById("cnh").value = data.cnh;
-            alert("OCR concluído! Confira CPF e CNH.");
+            await iniciarConsultaAutomatica();
             return;
           }
     
           // Se for PDF: o backend vai devolver { jobId }
           if (data?.jobId) {
-            alert("PDF recebido. Processando… aguarde alguns segundos.");
             // 2) polling simples (até 60s)
             const start = Date.now();
             while (Date.now() - start < 60000) {
+              if (loadingState.cancelled) return;
               await new Promise(r => setTimeout(r, 2500));
               const r2 = await fetch(`/api/ocr-cnh/status/${data.jobId}`);
               const d2 = await r2.json().catch(() => ({}));
@@ -1304,14 +1299,16 @@
               if (d2.status === "done") {
                 if (d2.cpf) document.getElementById("cpf").value = d2.cpf;
                 if (d2.cnh) document.getElementById("cnh").value = d2.cnh;
-                alert("OCR do PDF concluído! Confira CPF e CNH.");
+                await iniciarConsultaAutomatica();
                 return;
               }
               if (d2.status === "error") {
+                hideLoadingModal();
                 alert("Falhou OCR do PDF: " + (d2.error || "erro"));
                 return;
               }
             }
+            hideLoadingModal();
             alert("OCR do PDF demorou demais. Tente novamente ou envie foto (JPG/PNG).");
           }
         });
@@ -1404,15 +1401,88 @@
       }
 
       // LOADING MODAL FUNCTIONS
-      function showLoadingModal() {
+      const loadingState = {
+        cancelled: false,
+        abortController: null
+      };
+
+      function resetLoadingState() {
+        loadingState.cancelled = false;
+        loadingState.abortController = null;
+      }
+
+      function setAbortController() {
+        loadingState.abortController = new AbortController();
+        return loadingState.abortController;
+      }
+
+      function isCancelled(error) {
+        return loadingState.cancelled || error?.name === "AbortError";
+      }
+
+      function showLoadingModal({ title, message, showCancel = true } = {}) {
+        if (title) document.getElementById("loadingTitle").textContent = title;
+        if (message) document.getElementById("loadingMessage").innerHTML = message;
+        document.getElementById("loadingCancelBtn").style.display = showCancel ? "inline-flex" : "none";
         document.getElementById("loadingModal").classList.add("active");
       }
       function hideLoadingModal() {
         document.getElementById("loadingModal").classList.remove("active");
       }
       function cancelLoading() {
+        loadingState.cancelled = true;
+        loadingState.abortController?.abort();
         hideLoadingModal();
-        // Se necessário, você pode adicionar lógica para cancelar a requisição
+      }
+
+      async function iniciarConsultaAutomatica() {
+        const cpf = document.getElementById("cpf").value;
+        const cnh = document.getElementById("cnh").value;
+        const cpfDigits = cpf.replace(/\D/g, "");
+        const cnhDigits = cnh.replace(/\D/g, "");
+
+        showLoadingModal({
+          title: "Consultando sua CNH",
+          message: "Estamos consultando sua CNH no DETRAN...<br>Isso pode levar de 20 a 60 segundos."
+        });
+
+        await consultarCertidao({ cpf: cpfDigits, cnh: cnhDigits, forceScreen3: true });
+      }
+
+      async function consultarCertidao({ cpf, cnh, forceScreen3 = false }) {
+        try {
+          const resp = await fetch("/api/consultar-certidao", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cpf, cnh }),
+            signal: setAbortController().signal
+          });
+
+          const data = await resp.json().catch(() => ({}));
+          hideLoadingModal();
+
+          if (isCancelled()) return;
+          if (!resp.ok || !data.ok) {
+            alert("Erro: " + (data.error || "Falha ao consultar"));
+            return;
+          }
+
+          localStorage.setItem("CASE_ID_CERTIDAO", data.caseId);
+          localStorage.setItem("USER_CPF", cpf);
+          localStorage.setItem("USER_CNH", cnh);
+
+          if (forceScreen3) {
+            goToScreen3();
+          } else if (data.temProblemas) {
+            goToScreen3();
+          } else {
+            goToScreen4();
+          }
+        } catch (e) {
+          if (isCancelled(e)) return;
+          hideLoadingModal();
+          alert("Erro: " + (e.message || e));
+        }
       }
     </script>
 </body>
