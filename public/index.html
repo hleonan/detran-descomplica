@@ -889,8 +889,7 @@
 
             <div class="main-choices">
                 <!-- OPÇÃO 1: ANALISAR CNH -->
-                
-                <div class="choice-card">
+                <div class="choice-card" onclick="goToScreen2()">
                     <div class="choice-icon">🎯</div>
                     <h2 class="choice-title">Analisar Minha CNH</h2>
                     <p class="choice-description">
@@ -900,12 +899,11 @@
                         ✓ Processos de Suspensão<br>
                         ✓ Opção de Recurso
                     </p>
-                    <button class="btn-choice" onclick="event.stopPropagation(); goToScreen2();">Começar Análise</button>
+                    <button class="btn-choice">Começar Análise</button>
                 </div>
 
                 <!-- OPÇÃO 2: OUTROS SERVIÇOS -->
-                
-                <div class="choice-card">
+                <div class="choice-card" onclick="goToScreen5()">
                     <div class="choice-icon">📋</div>
                     <h2 class="choice-title">Outros Serviços</h2>
                     <p class="choice-description">
@@ -915,7 +913,7 @@
                         ✓ Agendamentos<br>
                         ✓ Licenciamento
                     </p>
-                    <button class="btn-choice" onclick="event.stopPropagation(); goToScreen5();">Ver Serviços</button>
+                    <button class="btn-choice">Ver Serviços</button>
                 </div>
             </div>
         </div>
@@ -1143,20 +1141,22 @@
                         </div>
                     </div>
                 </div>
-             </div>
+            </div>
+        </div>
     </div>
 
     <!-- LOADING MODAL -->
     <div id="loadingModal" class="loading-modal">
         <div class="loading-content">
             <div class="loading-spinner"></div>
-            <h2 class="loading-title">Por Favor, Aguarde</h2>
-            <p class="loading-message">Estamos consultando sua CNH no DETRAN...<br>Isso pode levar de 20 a 60 segundos.</p>
-            <button class="loading-cancel-btn" onclick="cancelLoading()">X Cancelar</button>
+            <div class="loading-title">Por Favor, Aguarde</div>
+            <div class="loading-message">
+                Estamos consultando sua CNH no DETRAN...<br>
+                Isso pode levar de 20 a 60 segundos.
+            </div>
+            <button class="loading-cancel-btn" onclick="cancelLoading()">✕ Cancelar</button>
         </div>
     </div>
-
-    <script>
 
     <!-- JAVASCRIPT -->
     <script>
@@ -1403,15 +1403,13 @@
         alert("Área Profissional em desenvolvimento.");
       }
 
-      // LOADING MODAL
+      // LOADING MODAL FUNCTIONS
       function showLoadingModal() {
         document.getElementById("loadingModal").classList.add("active");
       }
-
       function hideLoadingModal() {
         document.getElementById("loadingModal").classList.remove("active");
       }
-
       function cancelLoading() {
         hideLoadingModal();
         // Se necessário, você pode adicionar lógica para cancelar a requisição
