@@ -50,7 +50,6 @@
         .logo-img {
             width: 80px;  /* Aumentei de 50px para 80px */
             height: auto; /* Mantém a proporção correta */
-            /* Esta linha faz o PRETO virar TRANSPARENTE */
             filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.5));
             /* Garante que não tenha fundo preto */
             background: transparent; 
@@ -707,6 +706,7 @@
         .multas-empty-text {
             font-size: 16px;
             color: #666;
+            font-weight: 600;
         }
 
         /* TELA 5: OUTROS SERVIÇOS */
@@ -891,7 +891,6 @@
     </style>
 </head>
 <body>
-    <!-- HEADER -->
     <header>
         <div class="header-container">
             <div class="logo-container">
@@ -907,9 +906,7 @@
         </div>
     </header>
 
-    <!-- CONTAINER -->
     <div class="container">
-        <!-- TELA 1: INICIAL -->
         <div id="screen1" class="screen active">
             <div class="hero-section">
                 <h1 class="hero-title">MOTORISTA, ANALISE A SITUAÇÃO DA SUA CNH</h1>
@@ -917,7 +914,6 @@
             </div>
 
             <div class="main-choices">
-                <!-- OPÇÃO 1: ANALISAR CNH -->
                 <div class="choice-card" onclick="goToScreen2()">
                     <div class="choice-icon">🎯</div>
                     <h2 class="choice-title">Analisar Minha CNH</h2>
@@ -931,7 +927,6 @@
                     <button class="btn-choice">Começar Análise</button>
                 </div>
 
-                <!-- OPÇÃO 2: OUTROS SERVIÇOS -->
                 <div class="choice-card" onclick="goToScreen5()">
                     <div class="choice-icon">📋</div>
                     <h2 class="choice-title">Outros Serviços</h2>
@@ -947,7 +942,6 @@
             </div>
         </div>
 
-        <!-- TELA 2: ENTRADA DE DADOS -->
         <div id="screen2" class="screen">
             <button class="btn-back" onclick="goToScreen1()">← Voltar</button>
             
@@ -995,7 +989,6 @@
             </div>
         </div>
 
-        <!-- TELA 3: ALERTA -->
         <div id="screen3" class="screen">
             <button class="btn-back" onclick="goToScreen2()">← Voltar</button>
             
@@ -1010,7 +1003,6 @@
             </div>
         </div>
 
-        <!-- TELA 4: OPÇÕES DE SERVIÇOS CNH -->
         <div id="screen4" class="screen">
             <button class="btn-back" onclick="goToScreen3()">← Voltar</button>
             
@@ -1021,7 +1013,6 @@
                 </div>
 
                 <div class="services-grid">
-                    <!-- CERTIDÃO -->
                     <div class="service-card" onclick="selectService('certidao')">
                         <div class="service-icon">📄</div>
                         <h3 class="service-title">Emitir Certidão Nada Consta</h3>
@@ -1029,7 +1020,6 @@
                         <button class="btn-service" onclick="abrirCertidao()">Emitir Certidão</button>
                     </div>
 
-                    <!-- MULTAS -->
                     <div class="service-card" onclick="goToScreen6()">
                         <div class="service-icon">📋</div>
                         <h3 class="service-title">Consultar Multas</h3>
@@ -1037,7 +1027,6 @@
                         <button class="btn-service" onclick="goToScreen6()">Ver Multas</button>
                     </div>
 
-                    <!-- SUSPENSÃO -->
                     <div class="service-card" onclick="selectService('suspensao')">
                         <div class="service-icon">⚖️</div>
                         <h3 class="service-title">Processo de Suspensão</h3>
@@ -1045,7 +1034,6 @@
                         <button class="btn-service">Consultar Processo</button>
                     </div>
 
-                    <!-- RECURSO -->
                     <div class="service-card" onclick="selectService('recurso')">
                         <div class="service-icon">⚖️</div>
                         <h3 class="service-title">Defesa/Recurso</h3>
@@ -1056,7 +1044,6 @@
             </div>
         </div>
 
-        <!-- TELA 6: LISTA DE MULTAS -->
         <div id="screen6" class="screen">
             <button class="btn-back" onclick="goToScreen4()">← Voltar</button>
             
@@ -1066,7 +1053,6 @@
                     <p class="section-subtitle" id="multas-subtitle">Carregando...</p>
                 </div>
 
-                <!-- RESUMO -->
                 <div id="multas-resumo" class="multas-resumo" style="display: none;">
                     <div class="resumo-card">
                         <div class="resumo-icon">📊</div>
@@ -1091,12 +1077,9 @@
                     </div>
                 </div>
 
-                <!-- LISTA DE MULTAS -->
                 <div id="multas-lista" class="multas-lista">
-                    <!-- Multas serão inseridas aqui via JavaScript -->
-                </div>
+                    </div>
 
-                <!-- LOADING -->
                 <div id="multas-loading" class="loading-spinner">
                     <div class="spinner"></div>
                     <p>Consultando multas no DETRAN-RJ...</p>
@@ -1104,7 +1087,6 @@
             </div>
         </div>
 
-        <!-- TELA 5: OUTROS SERVIÇOS -->
         <div id="screen5" class="screen">
             <button class="btn-back" onclick="goToScreen1()">← Voltar</button>
             
@@ -1114,7 +1096,6 @@
                     <p class="section-subtitle">Serviços complementares para veículos, agendamentos e pagamentos</p>
                 </div>
 
-                <!-- VEÍCULOS -->
                 <div class="service-category">
                     <h3 class="category-title">🚗 Consulta de Veículos</h3>
                     <div class="service-list">
@@ -1129,7 +1110,6 @@
                     </div>
                 </div>
 
-                <!-- AGENDAMENTOS -->
                 <div class="service-category">
                     <h3 class="category-title">📅 Agendamentos</h3>
                     <div class="service-list">
@@ -1148,7 +1128,6 @@
                     </div>
                 </div>
 
-                <!-- PAGAMENTOS -->
                 <div class="service-category">
                     <h3 class="category-title">💳 Pagamento de Tributos</h3>
                     <div class="service-list">
@@ -1174,7 +1153,6 @@
         </div>
     </div>
 
-    <!-- LOADING MODAL -->
     <div id="loadingModal" class="loading-modal">
         <div class="loading-content">
             <div class="loading-spinner"></div>
@@ -1187,7 +1165,6 @@
         </div>
     </div>
 
-    <!-- JAVASCRIPT -->
     <script>
       // NAVEGAÇÃO ENTRE TELAS
       function showScreen(screenId) {
