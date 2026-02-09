@@ -939,11 +939,11 @@
       function goToScreen5() { showScreen("screen5"); }
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
 
-      // SISTEMA DE LOADING INTELIGENTE (LOOP DE MENSAGENS)
+      // SISTEMA DE LOADING INTELIGENTE
       let loadingInterval;
       const loadingMessages = [
           "Conectando ao sistema do DETRAN-RJ...",
-          "Validando autenticidade dos dados...",
+          "Resolvendo Captcha de segurança...",
           "Buscando infrações e pontuação...",
           "Analisando processos de suspensão...",
           "Gerando Certidão Digital...",
@@ -961,7 +961,7 @@
           loadingInterval = setInterval(() => {
               index = (index + 1) % loadingMessages.length;
               stepText.innerText = loadingMessages[index];
-          }, 1500);
+          }, 2500); // 2.5s para dar tempo de ler
       }
 
       function stopSmartLoading() {
@@ -1006,7 +1006,7 @@
         const cnh = document.getElementById("cnh").value;
     
         if (!validarCPF(cpf)) return alert("CPF inválido!");
-        if (cnh.length < 10) return alert("CNH inválida!");
+        if (cnh.length < 9) return alert("CNH inválida!"); // CNH pode ter menos de 11 digitos as vezes (antigas)
     
         const cpfDigits = cpf.replace(/\D/g, "");
         const cnhDigits = cnh.replace(/\D/g, "");
@@ -1015,8 +1015,9 @@
         startSmartLoading();
     
         try {
-          // 2. CHAMA O BACKEND (Simulação ou Real)
-          const resp = await fetch(`${API_URL}/analisar-cnh`, {
+          // 2. CHAMA O BACKEND REAL (Node.js)
+          // Rota corrigida: /consultar-certidao (conforme seu api.js)
+          const resp = await fetch(`${API_URL}/consultar-certidao`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
@@ -1027,7 +1028,7 @@
           // 3. PARA O LOADING
           stopSmartLoading();
     
-          if (!resp.ok) {
+          if (!resp.ok || !data.ok) {
             alert("Erro: " + (data.error || "Falha na consulta."));
             return;
           }
@@ -1039,13 +1040,15 @@
           const btnAction = document.getElementById("btn-result-action");
           const btnSecondary = document.getElementById("btn-result-secondary");
 
-          if (data.temOcorrencia) {
+          // Verifica flag 'temProblemas' que vem do seu api.js
+          if (data.temProblemas) {
             // --- CENÁRIO A: COM RISCO ---
             icon.innerText = "⚠️";
             title.innerText = "SUA CNH PODE ESTAR EM RISCO";
             title.style.color = "#FF4B2B"; // Vermelho
             
-            msg.innerHTML = `Identificamos ocorrências em sua certidão.<br>
+            // Usa o motivo retornado pelo backend (ex: "Certidão com restrição")
+            msg.innerHTML = `<strong>${data.motivo || "Identificamos pendências."}</strong><br>
                              É necessário agir imediatamente.`;
             
             // Botão Principal -> TELA 4
@@ -1062,14 +1065,18 @@
             title.style.color = "#28A745"; // Verde
             
             msg.innerHTML = `Não encontramos nenhuma irregularidade.<br>
-                             Sua certidão Nada Consta está pronta.`;
+                             Sua certidão Nada Consta foi gerada.`;
             
-            // Botão Principal -> Baixar ou Emitir
+            // Botão Principal -> Baixar PDF
+            // A rota para baixar é /api/certidao/:caseId (conforme seu api.js)
             btnAction.innerText = "CLIQUE AQUI PARA EMITIR A CERTIDÃO NADA CONSTA";
             btnAction.style.background = "#28A745";
             btnAction.onclick = () => {
-                if(data.linkCertidao) window.open(data.linkCertidao, '_blank');
-                else alert("Certidão gerada com sucesso! (Link simulado)");
+                if(data.caseId) {
+                    window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+                } else {
+                    alert("Erro: ID da certidão não encontrado.");
+                }
             };
 
             // Botão Secundário -> TELA 5
@@ -1082,11 +1089,12 @@
 
         } catch (e) {
           stopSmartLoading();
+          console.error(e);
           alert("Erro de comunicação: " + e.message);
         }
       }
 
-      // UPLOAD (INTEGRADO AO NOVO LOADING)
+      // UPLOAD (OCR)
       document.addEventListener("DOMContentLoaded", () => {
         const input = document.getElementById("fileUpload");
         if (!input) return;
@@ -1101,19 +1109,20 @@
           formData.append("doc", file);
 
           try {
+            // Rota correta: /ocr-cnh (conforme seu api.js)
             const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
             const data = await resp.json();
             stopSmartLoading();
 
-            if (data.cpf && data.cnh) {
-                document.getElementById("cpf").value = data.cpf;
-                document.getElementById("cnh").value = data.cnh;
+            if (resp.ok && (data.cpf || data.cnh)) {
+                if(data.cpf) document.getElementById("cpf").value = data.cpf;
+                if(data.cnh) document.getElementById("cnh").value = data.cnh;
                 
-                if(confirm("Leitura concluída!\nCPF: "+data.cpf+"\nConfirmar consulta?")) {
+                if(confirm(`Leitura concluída!\nCPF: ${data.cpf || '?'}\nCNH: ${data.cnh || '?'}\n\nConfirmar consulta?`)) {
                     handleDataEntry(new Event('submit'));
                 }
             } else {
-                alert("Não foi possível ler os dados da imagem.");
+                alert("Erro: " + (data.error || "Não foi possível ler os dados da imagem."));
             }
           } catch(err) {
             stopSmartLoading();
@@ -1127,6 +1136,7 @@
       function selectService(s) { alert("Serviço: " + s); }
       function selectOtherService(s) { alert("Outro Serviço: " + s); }
       function showProfessionalLogin() { alert("Login Profissional"); }
+      
       // Funções antigas (mantidas para compatibilidade)
       function showLoadingModal() { document.getElementById("loadingModal")?.classList.add("active"); }
       function hideLoadingModal() { document.getElementById("loadingModal")?.classList.remove("active"); }
