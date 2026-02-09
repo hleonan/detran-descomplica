@@ -993,13 +993,21 @@
             <button class="btn-back" onclick="goToScreen2()">← Voltar</button>
             
             <div class="alert-section">
-                <div class="alert-icon">⚠️</div>
-                <h2 class="alert-title">Você Tem Possíveis Problemas</h2>
-                <p class="alert-message">
-                    Identificamos ocorrências em seu prontuário de CNH.<br>
-                    Vamos analisar sua situação detalhadamente.
+                <div id="result-icon" class="alert-icon">⚠️</div>
+                
+                <h2 id="result-title" class="alert-title">Analisando...</h2>
+                
+                <p id="result-message" class="alert-message">
+                    Aguarde enquanto verificamos seus dados.
                 </p>
-                <button class="btn-primary" onclick="goToScreen4()">Prosseguir com Análise</button>
+
+                <button id="btn-result-action" class="btn-primary" onclick="goToScreen4()">
+                    Ver Detalhes
+                </button>
+
+                <button id="btn-result-secondary" class="btn-choice" style="display: none; margin-top: 15px; background: #6C757D;" onclick="goToScreen5()">
+                    Ver Outros Serviços
+                </button>
             </div>
         </div>
 
@@ -1262,7 +1270,9 @@
         window.open(`/api/certidao/${caseId}`, "_blank");
       }
     
-      // UPLOAD OCR (JPG/PNG faz na hora; PDF vai esperar processamento)
+      // ==========================================
+      // LÓGICA DE UPLOAD (OCR - GOOGLE VISION)
+      // ==========================================
       document.addEventListener("DOMContentLoaded", () => {
         const input = document.getElementById("fileUpload");
         if (!input) return;
@@ -1271,57 +1281,159 @@
           const file = e.target.files?.[0];
           if (!file) return;
     
-          alert(`Arquivo selecionado: ${file.name}\nEnviando para OCR...`);
+          // 1. Mostra Loading específico de OCR
+          showLoadingModal();
+          document.querySelector(".loading-message").innerText = 
+            "Lendo sua CNH com Inteligência Artificial...";
     
           const formData = new FormData();
           formData.append("doc", file);
     
-          // 1) manda o arquivo
-          const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
+          try {
+            // 2. Envia para o seu Backend Python (Endpoint de OCR)
+            const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
+            const data = await resp.json();
     
-          const txt = await resp.text();
-          let data = {};
-          try { data = JSON.parse(txt); } catch {}
+            hideLoadingModal();
+            resetLoadingMessage(); // Reseta mensagem original
     
-          if (!resp.ok) {
-            alert(data?.error || `Falha no OCR (HTTP ${resp.status}).`);
-            return;
-          }
-    
-          // Se veio CPF/CNH direto (imagem) -> preenche
-          if (data?.cpf || data?.cnh) {
-            if (data?.cpf) document.getElementById("cpf").value = data.cpf;
-            if (data?.cnh) document.getElementById("cnh").value = data.cnh;
-            alert("OCR concluído! Confira CPF e CNH.");
-            return;
-          }
-    
-          // Se for PDF: o backend vai devolver { jobId }
-          if (data?.jobId) {
-            alert("PDF recebido. Processando… aguarde alguns segundos.");
-            // 2) polling simples (até 60s)
-            const start = Date.now();
-            while (Date.now() - start < 60000) {
-              await new Promise(r => setTimeout(r, 2500));
-              const r2 = await fetch(`/api/ocr-cnh/status/${data.jobId}`);
-              const d2 = await r2.json().catch(() => ({}));
-              if (!r2.ok) continue;
-    
-              if (d2.status === "done") {
-                if (d2.cpf) document.getElementById("cpf").value = d2.cpf;
-                if (d2.cnh) document.getElementById("cnh").value = d2.cnh;
-                alert("OCR do PDF concluído! Confira CPF e CNH.");
-                return;
-              }
-              if (d2.status === "error") {
-                alert("Falhou OCR do PDF: " + (d2.error || "erro"));
-                return;
-              }
+            if (data.error) {
+              alert("Erro ao ler CNH: " + data.error);
+              return;
             }
-            alert("OCR do PDF demorou demais. Tente novamente ou envie foto (JPG/PNG).");
+    
+            // 3. Preenche o formulário automaticamente
+            if (data.cpf) document.getElementById("cpf").value = data.cpf;
+            if (data.cnh) document.getElementById("cnh").value = data.cnh;
+            
+            // 4. Feedback visual e pergunta se quer continuar
+            if (confirm("Dados extraídos com sucesso!\nCPF: " + data.cpf + "\nCNH: " + data.cnh + "\n\nDeseja consultar agora?")) {
+                // Se o usuário der OK, clica no botão continuar automaticamente
+                // Chama a função de análise simulando o evento
+                handleDataEntry(new Event('submit')); 
+            }
+    
+          } catch (err) {
+            hideLoadingModal();
+            resetLoadingMessage();
+            alert("Erro de conexão no OCR.");
           }
         });
       });
+
+      // ==========================================
+      // LÓGICA DE ANÁLISE (DETRAN - SELENIUM)
+      // ==========================================
+      async function handleDataEntry(event) {
+        if(event) event.preventDefault(); // Evita recarregar a página
+    
+        const cpf = document.getElementById("cpf").value;
+        const cnh = document.getElementById("cnh").value;
+    
+        // Validação básica
+        if (!validarCPF(cpf)) {
+          alert("Por favor, verifique o CPF digitado.");
+          return;
+        }
+        if (cnh.length < 10) {
+            alert("Por favor, verifique o número da CNH.");
+            return;
+        }
+    
+        // Limpa formatação para envio
+        const cpfDigits = cpf.replace(/\D/g, "");
+        const cnhDigits = cnh.replace(/\D/g, "");
+    
+        showLoadingModal();
+        document.querySelector(".loading-message").innerText = 
+            "Acessando sistema do DETRAN-RJ...\nVerificando pontuação e bloqueios.";
+    
+        try {
+          // CHAMA SEU BACKEND PYTHON
+          const resp = await fetch("/api/analisar-cnh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
+          });
+    
+          const data = await resp.json();
+          hideLoadingModal();
+          resetLoadingMessage();
+    
+          if (!resp.ok) {
+            alert("Erro na consulta: " + (data.error || "Tente novamente."));
+            return;
+          }
+    
+          // ===============================================
+          // O GRANDE DIFERENCIAL: DECISÃO DA TELA 3
+          // ===============================================
+          
+          // Prepara elementos da Tela 3
+          const icon = document.getElementById("result-icon");
+          const title = document.getElementById("result-title");
+          const msg = document.getElementById("result-message");
+          const btnAction = document.getElementById("btn-result-action");
+          const btnSecondary = document.getElementById("btn-result-secondary");
+
+          if (data.temOcorrencia === true) {
+            // --- CENÁRIO A: TEM PROBLEMA (RISCO) ---
+            icon.innerText = "⚠️";
+            title.innerText = "Atenção: Situação Irregular";
+            title.style.color = "#856404"; // Amarelo/Laranja escuro
+            
+            msg.innerHTML = `Identificamos pendências no seu prontuário.<br>
+                             <strong>Risco:</strong> ${data.tipoRisco || "Suspensão/Bloqueio"}<br>
+                             Recomendamos análise detalhada.`;
+            
+            // Botão leva para TELA 4 (Serviços/Recurso)
+            btnAction.innerText = "Verificar Soluções";
+            btnAction.onclick = () => goToScreen4();
+            btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)"; // Vermelho alerta
+            
+            btnSecondary.style.display = "none"; // Esconde botão secundário
+
+          } else {
+            // --- CENÁRIO B: NADA CONSTA (SUCESSO) ---
+            icon.innerText = "✅";
+            title.innerText = "Parabéns! Tudo Regular";
+            title.style.color = "#155724"; // Verde sucesso
+            
+            msg.innerHTML = `Não constam impedimentos ou multas ativas.<br>
+                             Sua CNH está em dia.`;
+            
+            // Botão Baixa a Certidão (Link que o backend mandou)
+            btnAction.innerText = "⬇ Baixar Certidão Nada Consta";
+            btnAction.style.background = "#28A745"; // Verde
+            // Função para baixar
+            btnAction.onclick = () => {
+                if(data.linkCertidao) window.open(data.linkCertidao, '_blank');
+                else alert("Certidão gerada, mas link não disponível.");
+            };
+
+            // Mostra botão para outros serviços
+            btnSecondary.style.display = "block";
+            btnSecondary.innerText = "Ver Outros Serviços";
+          }
+
+          // Salva dados no navegador para usar nas próximas telas
+          localStorage.setItem("DADOS_CNH", JSON.stringify(data));
+          
+          // Finalmente, vai para a Tela 3 (já configurada)
+          goToScreen3();
+
+        } catch (e) {
+          hideLoadingModal();
+          resetLoadingMessage();
+          console.error(e);
+          alert("Erro de comunicação com o servidor.");
+        }
+      }
+
+      function resetLoadingMessage() {
+        document.querySelector(".loading-message").innerText = 
+            "Estamos consultando sua CNH no DETRAN...\nIsso pode levar de 20 a 60 segundos.";
+      }
     
       // MULTAS
       async function consultarMultas() {
