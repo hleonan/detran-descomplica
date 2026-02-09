@@ -46,12 +46,11 @@
             gap: 15px;
         }
 
-        /* LOGO NO CABEÇALHO (Maior e sem fundo) */
+        /* LOGO NO CABEÇALHO */
         .logo-img {
-            width: 200px;  /* Aumentei*/
-            height: auto; /* Mantém a proporção correta */
+            width: 200px; 
+            height: auto; 
             filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.5));
-            /* Garante que não tenha fundo preto */
             background: transparent; 
             margin-right: 10px;
         }
@@ -64,17 +63,15 @@
             left: 0;
             width: 100%;
             height: 100%;
-            /* Pega a imagem da pasta assets */
             background-image: url('/assets/logo.png'); 
             background-repeat: no-repeat;
             background-position: center center;
-            background-size: 40%; /* Tamanho do logo no fundo (ajuste se quiser maior) */
-            opacity: 0.08; /* Deixa bem clarinho (8%) para não atrapalhar o texto */
-            pointer-events: none; /* Permite clicar através da imagem */
-            z-index: 0; /* Fica atrás do conteúdo */
+            background-size: 40%; 
+            opacity: 0.08; 
+            pointer-events: none; 
+            z-index: 0; 
         }
         
-        /* Ajuste para o conteúdo ficar na frente da marca d'água */
         .container, header {
             position: relative;
             z-index: 1; 
@@ -140,17 +137,11 @@
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        /* TELA 1: INICIAL */
+        /* HERO SECTION */
         .hero-section {
             text-align: center;
             margin-bottom: 60px;
@@ -249,7 +240,7 @@
             box-shadow: 0 10px 30px rgba(0, 61, 122, 0.4);
         }
 
-        /* TELA 2: ENTRADA DE DADOS */
+        /* DATA ENTRY SECTION */
         .data-entry-section {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -324,13 +315,8 @@
             background: #e0e0e0;
         }
 
-        .divider::before {
-            left: 0;
-        }
-
-        .divider::after {
-            right: 0;
-        }
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
 
         .upload-area {
             border: 3px dashed #00D4FF;
@@ -398,11 +384,9 @@
             margin-bottom: 20px;
         }
 
-        .btn-back:hover {
-            background: #5A6268;
-        }
+        .btn-back:hover { background: #5A6268; }
 
-        /* TELA 3: ALERTA */
+        /* ALERT SECTION */
         .alert-section {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -434,7 +418,7 @@
             margin-bottom: 40px;
         }
 
-        /* TELA 4: OPÇÕES DE SERVIÇOS */
+        /* SERVICES GRID */
         .services-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -491,11 +475,9 @@
             transition: all 0.3s ease;
         }
 
-        .btn-service:hover {
-            background: #005FA3;
-        }
+        .btn-service:hover { background: #005FA3; }
 
-        /* TELA 6: LISTA DE MULTAS */
+        /* MULTAS RESUMO & LISTA */
         .multas-resumo {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -514,30 +496,12 @@
             border-left: 5px solid #00D4FF;
         }
 
-        .resumo-icon {
-            font-size: 40px;
-        }
+        .resumo-icon { font-size: 40px; }
+        .resumo-content { flex: 1; }
+        .resumo-label { font-size: 13px; color: #666; margin-bottom: 5px; }
+        .resumo-value { font-size: 28px; color: #003D7A; font-weight: 700; }
 
-        .resumo-content {
-            flex: 1;
-        }
-
-        .resumo-label {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .resumo-value {
-            font-size: 28px;
-            color: #003D7A;
-            font-weight: 700;
-        }
-
-        .multas-lista {
-            display: grid;
-            gap: 20px;
-        }
+        .multas-lista { display: grid; gap: 20px; }
 
         .multa-card {
             background: white;
@@ -562,11 +526,7 @@
             gap: 10px;
         }
 
-        .multa-data {
-            font-size: 14px;
-            color: #666;
-            font-weight: 600;
-        }
+        .multa-data { font-size: 14px; color: #666; font-weight: 600; }
 
         .multa-status {
             padding: 6px 15px;
@@ -576,15 +536,8 @@
             text-transform: uppercase;
         }
 
-        .status-pendente {
-            background: #FFF3CD;
-            color: #856404;
-        }
-
-        .status-pago {
-            background: #D4EDDA;
-            color: #155724;
-        }
+        .status-pendente { background: #FFF3CD; color: #856404; }
+        .status-pago { background: #D4EDDA; color: #155724; }
 
         .multa-descricao {
             font-size: 16px;
@@ -600,28 +553,11 @@
             margin-bottom: 20px;
         }
 
-        .multa-detalhe {
-            display: flex;
-            flex-direction: column;
-        }
+        .multa-detalhe { display: flex; flex-direction: column; }
+        .detalhe-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+        .detalhe-value { font-size: 16px; color: #003D7A; font-weight: 600; }
 
-        .detalhe-label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .detalhe-value {
-            font-size: 16px;
-            color: #003D7A;
-            font-weight: 600;
-        }
-
-        .multa-actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+        .multa-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
         .btn-recorrer {
             background: linear-gradient(135deg, #00D4FF 0%, #0099CC 100%);
@@ -636,11 +572,7 @@
             flex: 1;
             min-width: 150px;
         }
-
-        .btn-recorrer:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
-        }
+        .btn-recorrer:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4); }
 
         .btn-pagar {
             background: #28A745;
@@ -655,61 +587,14 @@
             flex: 1;
             min-width: 150px;
         }
+        .btn-pagar:hover { background: #218838; transform: translateY(-2px); }
 
-        .btn-pagar:hover {
-            background: #218838;
-            transform: translateY(-2px);
-        }
+        .multas-empty { text-align: center; padding: 60px 20px; }
+        .multas-empty-icon { font-size: 80px; margin-bottom: 20px; }
+        .multas-empty-title { font-size: 24px; color: #003D7A; font-weight: 700; margin-bottom: 10px; }
+        .multas-empty-text { font-size: 16px; color: #666; font-weight: 600; }
 
-        .loading-spinner {
-            text-align: center;
-            padding: 60px 20px;
-        }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #003D7A;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .loading-spinner p {
-            color: #666;
-            font-size: 16px;
-        }
-
-        .multas-empty {
-            text-align: center;
-            padding: 60px 20px;
-        }
-
-        .multas-empty-icon {
-            font-size: 80px;
-            margin-bottom: 20px;
-        }
-
-        .multas-empty-title {
-            font-size: 24px;
-            color: #003D7A;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-
-        .multas-empty-text {
-            font-size: 16px;
-            color: #666;
-            font-weight: 600;
-        }
-
-        /* TELA 5: OUTROS SERVIÇOS */
+        /* OTHER SERVICES */
         .other-services-section {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -752,141 +637,74 @@
             border-left: 3px solid #003D7A;
         }
 
-        .service-item:hover {
-            background: #e8f0ff;
-            transform: translateX(5px);
-        }
+        .service-item:hover { background: #e8f0ff; transform: translateX(5px); }
+        .service-item-title { font-size: 15px; color: #003D7A; font-weight: 600; margin-bottom: 5px; }
+        .service-item-desc { font-size: 13px; color: #666; }
 
-        .service-item-title {
-            font-size: 15px;
-            color: #003D7A;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .service-item-desc {
-            font-size: 13px;
-            color: #666;
-        }
-
-        /* LOADING MODAL */
-        .loading-modal {
-            display: none;
+        /* --- SMART LOADING INTELIGENTE (NOVO CSS) --- */
+        .smart-loading {
+            display: none; /* Escondido por padrão */
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(5px);
-            z-index: 9999;
+            background: rgba(0, 29, 61, 0.85); /* Azul escuro transparente */
+            backdrop-filter: blur(15px); /* EFEITO DE DESFOQUE */
+            z-index: 2000;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-        }
-
-        .loading-modal.active {
-            display: flex;
-        }
-
-        .loading-content {
-            background: white;
-            border-radius: 20px;
-            padding: 50px;
             text-align: center;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .loading-spinner {
-            width: 60px;
-            height: 60px;
-            margin: 0 auto 30px;
-            border: 5px solid #f0f0f0;
-            border-top: 5px solid #003D7A;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .loading-title {
-            font-size: 24px;
-            color: #003D7A;
-            margin-bottom: 15px;
-            font-weight: 700;
-        }
-
-        .loading-message {
-            font-size: 16px;
-            color: #666;
-            line-height: 1.6;
-            margin-bottom: 30px;
-        }
-
-        .loading-cancel-btn {
-            background: #6C757D;
             color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s ease;
+            transition: opacity 0.5s ease;
         }
 
-        .loading-cancel-btn:hover {
-            background: #5a6268;
-            transform: translateY(-2px);
+        .smart-loading.active {
+            display: flex;
+            animation: fadeIn 0.5s forwards;
+        }
+
+        .loading-logo {
+            width: 120px;
+            margin-bottom: 30px;
+            animation: pulse 2s infinite ease-in-out;
+            filter: drop-shadow(0 0 20px rgba(0, 212, 255, 0.6));
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.8; }
+        }
+
+        .loading-text {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #fff, #00D4FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .loading-step {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 300;
+            letter-spacing: 1px;
+            min-height: 25px; 
         }
 
         /* RESPONSIVIDADE */
         @media (max-width: 768px) {
-            .hero-title {
-                font-size: 32px;
-            }
-
-            .hero-subtitle {
-                font-size: 16px;
-            }
-
-            .main-choices {
-                grid-template-columns: 1fr;
-            }
-
-            .data-entry-section,
-            .alert-section,
-            .other-services-section {
-                padding: 30px 20px;
-            }
-
-            .services-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .logo-title {
-                font-size: 18px;
-            }
-
-            .btn-professional {
-                padding: 10px 15px;
-                font-size: 12px;
-            }
+            .hero-title { font-size: 32px; }
+            .hero-subtitle { font-size: 16px; }
+            .main-choices { grid-template-columns: 1fr; }
+            .data-entry-section, .alert-section, .other-services-section { padding: 30px 20px; }
+            .services-grid { grid-template-columns: 1fr; }
+            .logo-title { font-size: 18px; }
+            .btn-professional { padding: 10px 15px; font-size: 12px; }
         }
     </style>
 </head>
@@ -954,24 +772,12 @@
                 <form onsubmit="handleDataEntry(event)">
                     <div class="form-group">
                         <label for="cpf">CPF *</label>
-                        <input 
-                            type="text" 
-                            id="cpf" 
-                            placeholder="000.000.000-00" 
-                            maxlength="14"
-                            required
-                        >
+                        <input type="text" id="cpf" placeholder="000.000.000-00" maxlength="14" required>
                     </div>
 
                     <div class="form-group">
                         <label for="cnh">Número da CNH *</label>
-                        <input 
-                            type="text" 
-                            id="cnh" 
-                            placeholder="00000000000" 
-                            maxlength="11"
-                            required
-                        >
+                        <input type="text" id="cnh" placeholder="00000000000" maxlength="11" required>
                     </div>
 
                     <div class="divider">OU</div>
@@ -981,8 +787,7 @@
                         <p class="upload-text">Clique para fazer upload da CNH</p>
                         <p class="upload-hint">Extrairemos os dados automaticamente</p>
                     </div>
-                    <input type="file" id="fileUpload" style="display: none;"
-                      accept="application/pdf,image/jpeg,image/jpg,image/png">
+                    <input type="file" id="fileUpload" style="display: none;" accept="application/pdf,image/jpeg,image/jpg,image/png">
 
                     <button type="submit" class="btn-primary">Continuar</button>
                 </form>
@@ -995,18 +800,18 @@
             <div class="alert-section">
                 <div id="result-icon" class="alert-icon">⚠️</div>
                 
-                <h2 id="result-title" class="alert-title">Analisando...</h2>
+                <h2 id="result-title" class="alert-title">Atenção</h2>
                 
                 <p id="result-message" class="alert-message">
-                    Aguarde enquanto verificamos seus dados.
+                    Aguarde o resultado...
                 </p>
 
-                <button id="btn-result-action" class="btn-primary" onclick="goToScreen4()">
-                    Ver Detalhes
+                <button id="btn-result-action" class="btn-primary" style="margin-bottom: 15px;">
+                    Ação Principal
                 </button>
 
-                <button id="btn-result-secondary" class="btn-choice" style="display: none; margin-top: 15px; background: #6C757D;" onclick="goToScreen5()">
-                    Ver Outros Serviços
+                <button id="btn-result-secondary" class="btn-professional" style="display: none; width: 100%; background: #003D7A;">
+                    MAIS SERVIÇOS CLIQUE AQUI
                 </button>
             </div>
         </div>
@@ -1027,21 +832,18 @@
                         <p class="service-description">Documento oficial do DETRAN comprovando sua situação</p>
                         <button class="btn-service" onclick="abrirCertidao()">Emitir Certidão</button>
                     </div>
-
                     <div class="service-card" onclick="goToScreen6()">
                         <div class="service-icon">📋</div>
                         <h3 class="service-title">Consultar Multas</h3>
                         <p class="service-description">Veja todas as suas multas com detalhes completos</p>
                         <button class="btn-service" onclick="goToScreen6()">Ver Multas</button>
                     </div>
-
                     <div class="service-card" onclick="selectService('suspensao')">
                         <div class="service-icon">⚖️</div>
                         <h3 class="service-title">Processo de Suspensão</h3>
                         <p class="service-description">Acompanhe processos de suspensão ou cassação</p>
                         <button class="btn-service">Consultar Processo</button>
                     </div>
-
                     <div class="service-card" onclick="selectService('recurso')">
                         <div class="service-icon">⚖️</div>
                         <h3 class="service-title">Defesa/Recurso</h3>
@@ -1054,13 +856,11 @@
 
         <div id="screen6" class="screen">
             <button class="btn-back" onclick="goToScreen4()">← Voltar</button>
-            
             <div class="data-entry-section" style="max-width: 1200px;">
                 <div class="section-header">
                     <h2 class="section-title">Suas Multas de Trânsito</h2>
                     <p class="section-subtitle" id="multas-subtitle">Carregando...</p>
                 </div>
-
                 <div id="multas-resumo" class="multas-resumo" style="display: none;">
                     <div class="resumo-card">
                         <div class="resumo-icon">📊</div>
@@ -1084,10 +884,7 @@
                         </div>
                     </div>
                 </div>
-
-                <div id="multas-lista" class="multas-lista">
-                    </div>
-
+                <div id="multas-lista" class="multas-lista"></div>
                 <div id="multas-loading" class="loading-spinner">
                     <div class="spinner"></div>
                     <p>Consultando multas no DETRAN-RJ...</p>
@@ -1097,13 +894,11 @@
 
         <div id="screen5" class="screen">
             <button class="btn-back" onclick="goToScreen1()">← Voltar</button>
-            
             <div class="other-services-section">
                 <div class="section-header">
                     <h2 class="section-title">Outros Serviços DETRAN</h2>
                     <p class="section-subtitle">Serviços complementares para veículos, agendamentos e pagamentos</p>
                 </div>
-
                 <div class="service-category">
                     <h3 class="category-title">🚗 Consulta de Veículos</h3>
                     <div class="service-list">
@@ -1117,78 +912,65 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="service-category">
-                    <h3 class="category-title">📅 Agendamentos</h3>
-                    <div class="service-list">
-                        <div class="service-item" onclick="selectOtherService('agendar-cnh')">
-                            <div class="service-item-title">Renovação de CNH</div>
-                            <div class="service-item-desc">Agende renovação ou 2ª via</div>
-                        </div>
-                        <div class="service-item" onclick="selectOtherService('agendar-identidade')">
-                            <div class="service-item-title">Identidade (RG)</div>
-                            <div class="service-item-desc">1ª via, renovação ou 2ª via</div>
-                        </div>
-                        <div class="service-item" onclick="selectOtherService('agendar-veiculo')">
-                            <div class="service-item-title">Serviços Veiculares</div>
-                            <div class="service-item-desc">Inspeção, transferência, etc.</div>
-                        </div>
-                    </div>
                 </div>
-
-                <div class="service-category">
-                    <h3 class="category-title">💳 Pagamento de Tributos</h3>
-                    <div class="service-list">
-                        <div class="service-item" onclick="selectOtherService('pagar-ipva')">
-                            <div class="service-item-title">IPVA</div>
-                            <div class="service-item-desc">Emitir boleto IPVA</div>
-                        </div>
-                        <div class="service-item" onclick="selectOtherService('pagar-duda')">
-                            <div class="service-item-title">DUDA</div>
-                            <div class="service-item-desc">Documento de arrecadação</div>
-                        </div>
-                        <div class="service-item" onclick="selectOtherService('pagar-grt')">
-                            <div class="service-item-title">GRT</div>
-                            <div class="service-item-desc">Gerenciamento de Risco</div>
-                        </div>
-                        <div class="service-item" onclick="selectOtherService('pagar-multa')">
-                            <div class="service-item-title">Multas</div>
-                            <div class="service-item-desc">Emitir boleto de multas</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
-    <div id="loadingModal" class="loading-modal">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div class="loading-title">Por Favor, Aguarde</div>
-            <div class="loading-message">
-                Estamos consultando sua CNH no DETRAN...<br>
-                Isso pode levar de 20 a 60 segundos.
-            </div>
-            <button class="loading-cancel-btn" onclick="cancelLoading()">✕ Cancelar</button>
-        </div>
+    <div id="smartLoading" class="smart-loading">
+        <img src="/assets/logo.png" alt="Processando" class="loading-logo">
+        <div class="loading-text">Analisando sua CNH</div>
+        <div id="loadingStepText" class="loading-step">Conectando ao DETRAN...</div>
     </div>
 
     <script>
-      // NAVEGAÇÃO ENTRE TELAS
+      // CONFIGURAÇÃO
+      const API_URL = "/api"; 
+
+      // NAVEGAÇÃO
       function showScreen(screenId) {
         document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
         document.getElementById(screenId).classList.add("active");
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
-    
       function goToScreen1() { showScreen("screen1"); }
       function goToScreen2() { showScreen("screen2"); }
       function goToScreen3() { showScreen("screen3"); }
       function goToScreen4() { showScreen("screen4"); }
       function goToScreen5() { showScreen("screen5"); }
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
-    
-      // CPF máscara
+
+      // SISTEMA DE LOADING INTELIGENTE (LOOP DE MENSAGENS)
+      let loadingInterval;
+      const loadingMessages = [
+          "Conectando ao sistema do DETRAN-RJ...",
+          "Validando autenticidade dos dados...",
+          "Buscando infrações e pontuação...",
+          "Analisando processos de suspensão...",
+          "Gerando Certidão Digital...",
+          "Finalizando relatório..."
+      ];
+
+      function startSmartLoading() {
+          const overlay = document.getElementById("smartLoading");
+          const stepText = document.getElementById("loadingStepText");
+          let index = 0;
+          
+          overlay.classList.add("active");
+          stepText.innerText = loadingMessages[0];
+
+          loadingInterval = setInterval(() => {
+              index = (index + 1) % loadingMessages.length;
+              stepText.innerText = loadingMessages[index];
+          }, 1500);
+      }
+
+      function stopSmartLoading() {
+          const overlay = document.getElementById("smartLoading");
+          overlay.classList.remove("active");
+          clearInterval(loadingInterval);
+      }
+
+      // CPF MÁSCARA E VALIDAÇÃO
       document.getElementById("cpf")?.addEventListener("input", (e) => {
         let v = e.target.value.replace(/\D/g, "");
         if (v.length > 0) {
@@ -1198,340 +980,157 @@
         }
         e.target.value = v;
       });
-    
-      // CPF validação
+
       function validarCPF(cpf) {
         cpf = cpf.replace(/\D/g, "");
-        if (cpf.length !== 11) return false;
-        if (/^(\d)\1{10}$/.test(cpf)) return false;
-    
+        if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
         let soma = 0, resto;
         for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i - 1, i)) * (11 - i);
         resto = (soma * 10) % 11;
         if (resto === 10 || resto === 11) resto = 0;
         if (resto !== parseInt(cpf.substring(9, 10))) return false;
-    
         soma = 0;
         for (let i = 1; i <= 10; i++) soma += parseInt(cpf.substring(i - 1, i)) * (12 - i);
         resto = (soma * 10) % 11;
         if (resto === 10 || resto === 11) resto = 0;
-        if (resto !== parseInt(cpf.substring(10, 11))) return false;
-    
-        return true;
+        return (resto === parseInt(cpf.substring(10, 11)));
       }
-    
-      // SUBMIT MANUAL (CPF + CNH)
-      async function handleDataEntry(event) {
-        event.preventDefault();
-    
-        const cpf = document.getElementById("cpf").value;
-        const cnh = document.getElementById("cnh").value;
-    
-        if (!validarCPF(cpf)) {
-          alert("CPF inválido!");
-          return;
-        }
-    
-        const cpfDigits = cpf.replace(/\D/g, "");
-        const cnhDigits = cnh.replace(/\D/g, "");
-    
-        showLoadingModal();
-    
-        try {
-          const resp = await fetch("/api/consultar-certidao", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
-          });
-    
-          const data = await resp.json().catch(() => ({}));
-          hideLoadingModal();
-    
-          if (!resp.ok || !data.ok) {
-            alert("Erro: " + (data.error || "Falha ao consultar"));
-            return;
-          }
-    
-          localStorage.setItem("CASE_ID_CERTIDAO", data.caseId);
-          localStorage.setItem("USER_CPF", cpfDigits);
-          localStorage.setItem("USER_CNH", cnhDigits);
-    
-          if (data.temProblemas) goToScreen3();
-          else goToScreen4();
-        } catch (e) {
-          hideLoadingModal();
-          alert("Erro: " + (e.message || e));
-        }
-      }
-    
-      function abrirCertidao() {
-        const caseId = localStorage.getItem("CASE_ID_CERTIDAO");
-        if (!caseId) return alert("Não encontrei certidão guardada. Faça a consulta primeiro.");
-        window.open(`/api/certidao/${caseId}`, "_blank");
-      }
-    
-      // ==========================================
-      // LÓGICA DE UPLOAD (OCR - GOOGLE VISION)
-      // ==========================================
-      document.addEventListener("DOMContentLoaded", () => {
-        const input = document.getElementById("fileUpload");
-        if (!input) return;
-    
-        input.addEventListener("change", async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-    
-          // 1. Mostra Loading específico de OCR
-          showLoadingModal();
-          document.querySelector(".loading-message").innerText = 
-            "Lendo sua CNH com Inteligência Artificial...";
-    
-          const formData = new FormData();
-          formData.append("doc", file);
-    
-          try {
-            // 2. Envia para o seu Backend Python (Endpoint de OCR)
-            const resp = await fetch("/api/ocr-cnh", { method: "POST", body: formData });
-            const data = await resp.json();
-    
-            hideLoadingModal();
-            resetLoadingMessage(); // Reseta mensagem original
-    
-            if (data.error) {
-              alert("Erro ao ler CNH: " + data.error);
-              return;
-            }
-    
-            // 3. Preenche o formulário automaticamente
-            if (data.cpf) document.getElementById("cpf").value = data.cpf;
-            if (data.cnh) document.getElementById("cnh").value = data.cnh;
-            
-            // 4. Feedback visual e pergunta se quer continuar
-            if (confirm("Dados extraídos com sucesso!\nCPF: " + data.cpf + "\nCNH: " + data.cnh + "\n\nDeseja consultar agora?")) {
-                // Se o usuário der OK, clica no botão continuar automaticamente
-                // Chama a função de análise simulando o evento
-                handleDataEntry(new Event('submit')); 
-            }
-    
-          } catch (err) {
-            hideLoadingModal();
-            resetLoadingMessage();
-            alert("Erro de conexão no OCR.");
-          }
-        });
-      });
 
-      // ==========================================
-      // LÓGICA DE ANÁLISE (DETRAN - SELENIUM)
-      // ==========================================
+      // ---------------------------------------------------------
+      // LÓGICA PRINCIPAL: ANÁLISE E DECISÃO
+      // ---------------------------------------------------------
       async function handleDataEntry(event) {
-        if(event) event.preventDefault(); // Evita recarregar a página
+        if(event) event.preventDefault();
     
         const cpf = document.getElementById("cpf").value;
         const cnh = document.getElementById("cnh").value;
     
-        // Validação básica
-        if (!validarCPF(cpf)) {
-          alert("Por favor, verifique o CPF digitado.");
-          return;
-        }
-        if (cnh.length < 10) {
-            alert("Por favor, verifique o número da CNH.");
-            return;
-        }
+        if (!validarCPF(cpf)) return alert("CPF inválido!");
+        if (cnh.length < 10) return alert("CNH inválida!");
     
-        // Limpa formatação para envio
         const cpfDigits = cpf.replace(/\D/g, "");
         const cnhDigits = cnh.replace(/\D/g, "");
     
-        showLoadingModal();
-        document.querySelector(".loading-message").innerText = 
-            "Acessando sistema do DETRAN-RJ...\nVerificando pontuação e bloqueios.";
+        // 1. INICIA O SHOW (LOADING DESFOCADO)
+        startSmartLoading();
     
         try {
-          // CHAMA SEU BACKEND PYTHON
-          const resp = await fetch("/api/analisar-cnh", {
+          // 2. CHAMA O BACKEND (Simulação ou Real)
+          const resp = await fetch(`${API_URL}/analisar-cnh`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
           });
     
           const data = await resp.json();
-          hideLoadingModal();
-          resetLoadingMessage();
+          
+          // 3. PARA O LOADING
+          stopSmartLoading();
     
           if (!resp.ok) {
-            alert("Erro na consulta: " + (data.error || "Tente novamente."));
+            alert("Erro: " + (data.error || "Falha na consulta."));
             return;
           }
     
-          // ===============================================
-          // O GRANDE DIFERENCIAL: DECISÃO DA TELA 3
-          // ===============================================
-          
-          // Prepara elementos da Tela 3
+          // 4. CONFIGURA A TELA 3 DINAMICAMENTE
           const icon = document.getElementById("result-icon");
           const title = document.getElementById("result-title");
           const msg = document.getElementById("result-message");
           const btnAction = document.getElementById("btn-result-action");
           const btnSecondary = document.getElementById("btn-result-secondary");
 
-          if (data.temOcorrencia === true) {
-            // --- CENÁRIO A: TEM PROBLEMA (RISCO) ---
+          if (data.temOcorrencia) {
+            // --- CENÁRIO A: COM RISCO ---
             icon.innerText = "⚠️";
-            title.innerText = "Atenção: Situação Irregular";
-            title.style.color = "#856404"; // Amarelo/Laranja escuro
+            title.innerText = "SUA CNH PODE ESTAR EM RISCO";
+            title.style.color = "#FF4B2B"; // Vermelho
             
-            msg.innerHTML = `Identificamos pendências no seu prontuário.<br>
-                             <strong>Risco:</strong> ${data.tipoRisco || "Suspensão/Bloqueio"}<br>
-                             Recomendamos análise detalhada.`;
+            msg.innerHTML = `Identificamos ocorrências em sua certidão.<br>
+                             É necessário agir imediatamente.`;
             
-            // Botão leva para TELA 4 (Serviços/Recurso)
-            btnAction.innerText = "Verificar Soluções";
-            btnAction.onclick = () => goToScreen4();
-            btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)"; // Vermelho alerta
+            // Botão Principal -> TELA 4
+            btnAction.innerText = "CLIQUE AQUI PARA CONTINUAR";
+            btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)";
+            btnAction.onclick = () => goToScreen4(); 
             
-            btnSecondary.style.display = "none"; // Esconde botão secundário
+            btnSecondary.style.display = "none"; 
 
           } else {
-            // --- CENÁRIO B: NADA CONSTA (SUCESSO) ---
+            // --- CENÁRIO B: NADA CONSTA ---
             icon.innerText = "✅";
-            title.innerText = "Parabéns! Tudo Regular";
-            title.style.color = "#155724"; // Verde sucesso
+            title.innerText = "Tudo Certo com sua CNH!";
+            title.style.color = "#28A745"; // Verde
             
-            msg.innerHTML = `Não constam impedimentos ou multas ativas.<br>
-                             Sua CNH está em dia.`;
+            msg.innerHTML = `Não encontramos nenhuma irregularidade.<br>
+                             Sua certidão Nada Consta está pronta.`;
             
-            // Botão Baixa a Certidão (Link que o backend mandou)
-            btnAction.innerText = "⬇ Baixar Certidão Nada Consta";
-            btnAction.style.background = "#28A745"; // Verde
-            // Função para baixar
+            // Botão Principal -> Baixar ou Emitir
+            btnAction.innerText = "CLIQUE AQUI PARA EMITIR A CERTIDÃO NADA CONSTA";
+            btnAction.style.background = "#28A745";
             btnAction.onclick = () => {
                 if(data.linkCertidao) window.open(data.linkCertidao, '_blank');
-                else alert("Certidão gerada, mas link não disponível.");
+                else alert("Certidão gerada com sucesso! (Link simulado)");
             };
 
-            // Mostra botão para outros serviços
+            // Botão Secundário -> TELA 5
             btnSecondary.style.display = "block";
-            btnSecondary.innerText = "Ver Outros Serviços";
+            btnSecondary.innerText = "MAIS SERVIÇOS CLIQUE AQUI";
+            btnSecondary.onclick = () => goToScreen5(); 
           }
 
-          // Salva dados no navegador para usar nas próximas telas
-          localStorage.setItem("DADOS_CNH", JSON.stringify(data));
-          
-          // Finalmente, vai para a Tela 3 (já configurada)
           goToScreen3();
 
         } catch (e) {
-          hideLoadingModal();
-          resetLoadingMessage();
-          console.error(e);
-          alert("Erro de comunicação com o servidor.");
+          stopSmartLoading();
+          alert("Erro de comunicação: " + e.message);
         }
       }
 
-      function resetLoadingMessage() {
-        document.querySelector(".loading-message").innerText = 
-            "Estamos consultando sua CNH no DETRAN...\nIsso pode levar de 20 a 60 segundos.";
-      }
-    
-      // MULTAS
-      async function consultarMultas() {
-        const cpf = localStorage.getItem("USER_CPF");
-        const cnh = localStorage.getItem("USER_CNH");
-        if (!cpf || !cnh) { alert("Dados não encontrados. Faça a consulta novamente."); goToScreen2(); return; }
-    
-        document.getElementById("multas-loading").style.display = "block";
-        document.getElementById("multas-resumo").style.display = "none";
-        document.getElementById("multas-lista").innerHTML = "";
-    
-        try {
-          const resp = await fetch("/api/consultar-multas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf, cnh })
-          });
-    
-          const data = await resp.json();
-          if (!resp.ok || !data.ok) throw new Error(data.error || "Erro ao consultar multas");
-    
-          document.getElementById("multas-loading").style.display = "none";
-          document.getElementById("pontos-totais").textContent = data.resumo?.pontosTotais || "0";
-          document.getElementById("multas-pendentes").textContent = data.resumo?.multasPendentes || "0";
-          document.getElementById("situacao-cnh").textContent = data.resumo?.situacao || "Regular";
-          document.getElementById("multas-resumo").style.display = "grid";
-    
-          const totalMultas = data.multas?.length || 0;
-          document.getElementById("multas-subtitle").textContent =
-            totalMultas > 0 ? `Encontramos ${totalMultas} multa(s) registrada(s) em seu nome` : "Nenhuma multa encontrada";
-    
-          localStorage.setItem("MULTAS_DATA", JSON.stringify(data.multas || []));
-    
-          document.getElementById("multas-lista").innerHTML = (totalMultas === 0)
-            ? `<div class="multas-empty"><div class="multas-empty-icon">✅</div><h3 class="multas-empty-title">Parabéns!</h3><p class="multas-empty-text">Você não possui multas pendentes.</p></div>`
-            : data.multas.map((multa, index) => `
-                <div class="multa-card">
-                  <div class="multa-header">
-                    <div class="multa-data">📅 ${multa.data || "Data não informada"}</div>
-                    <div class="multa-status ${multa.status === "Pago" ? "status-pago" : "status-pendente"}">${multa.status || "Pendente"}</div>
-                  </div>
-                  <div class="multa-descricao">${multa.descricao || "Descrição não disponível"}</div>
-                  <div class="multa-detalhes">
-                    <div class="multa-detalhe"><div class="detalhe-label">Pontos</div><div class="detalhe-value">${multa.pontos || "0"}</div></div>
-                    <div class="multa-detalhe"><div class="detalhe-label">Valor</div><div class="detalhe-value">${multa.valor || "R$ 0,00"}</div></div>
-                  </div>
-                  <div class="multa-actions">
-                    <button class="btn-recorrer" onclick="recorrerMulta(${index})">⚖️ Recorrer desta Multa</button>
-                    <button class="btn-pagar" onclick="pagarMulta(${index})">💳 Pagar Multa</button>
-                  </div>
-                </div>
-              `).join("");
-        } catch (err) {
-          document.getElementById("multas-loading").style.display = "none";
-          document.getElementById("multas-lista").innerHTML =
-            `<div class="multas-empty"><div class="multas-empty-icon">⚠️</div><h3 class="multas-empty-title">Erro ao Consultar</h3><p class="multas-empty-text">${err.message || "Tente novamente."}</p></div>`;
-        }
-      }
-    
-      function recorrerMulta(index) {
-        const multas = JSON.parse(localStorage.getItem("MULTAS_DATA") || "[]");
-        const multa = multas[index];
-        if (!multa) return alert("Multa não encontrada.");
-        alert(`Recurso em desenvolvimento.\n\nMulta: ${multa.descricao}\nValor: ${multa.valor}`);
-      }
-    
-      function pagarMulta(index) {
-        const multas = JSON.parse(localStorage.getItem("MULTAS_DATA") || "[]");
-        const multa = multas[index];
-        if (!multa) return alert("Multa não encontrada.");
-        alert(`Pagamento em desenvolvimento.\n\nMulta: ${multa.descricao}\nValor: ${multa.valor}`);
-      }
-    
-      // SERVIÇOS
-      function selectService(service) {
-        if (service === "certidao") return abrirCertidao();
-        alert("Fluxo em desenvolvimento.");
-      }
-    
-      function selectOtherService(service) {
-        alert(`Serviço selecionado: ${service}\nFluxo em desenvolvimento.`);
-      }
-    
-      function showProfessionalLogin() {
-        alert("Área Profissional em desenvolvimento.");
-      }
+      // UPLOAD (INTEGRADO AO NOVO LOADING)
+      document.addEventListener("DOMContentLoaded", () => {
+        const input = document.getElementById("fileUpload");
+        if (!input) return;
+        input.addEventListener("change", async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
 
-      // LOADING MODAL FUNCTIONS
-      function showLoadingModal() {
-        document.getElementById("loadingModal").classList.add("active");
-      }
-      function hideLoadingModal() {
-        document.getElementById("loadingModal").classList.remove("active");
-      }
-      function cancelLoading() {
-        hideLoadingModal();
-        // Se necessário, você pode adicionar lógica para cancelar a requisição
-      }
+          startSmartLoading(); 
+          document.getElementById("loadingStepText").innerText = "Lendo imagem da CNH...";
+
+          const formData = new FormData();
+          formData.append("doc", file);
+
+          try {
+            const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
+            const data = await resp.json();
+            stopSmartLoading();
+
+            if (data.cpf && data.cnh) {
+                document.getElementById("cpf").value = data.cpf;
+                document.getElementById("cnh").value = data.cnh;
+                
+                if(confirm("Leitura concluída!\nCPF: "+data.cpf+"\nConfirmar consulta?")) {
+                    handleDataEntry(new Event('submit'));
+                }
+            } else {
+                alert("Não foi possível ler os dados da imagem.");
+            }
+          } catch(err) {
+            stopSmartLoading();
+            alert("Erro no upload.");
+          }
+        });
+      });
+
+      // Funções Placeholder
+      function abrirCertidao() { alert("Simulação de abertura de certidão."); }
+      function selectService(s) { alert("Serviço: " + s); }
+      function selectOtherService(s) { alert("Outro Serviço: " + s); }
+      function showProfessionalLogin() { alert("Login Profissional"); }
+      // Funções antigas (mantidas para compatibilidade)
+      function showLoadingModal() { document.getElementById("loadingModal")?.classList.add("active"); }
+      function hideLoadingModal() { document.getElementById("loadingModal")?.classList.remove("active"); }
+      function cancelLoading() { hideLoadingModal(); }
     </script>
 </body>
 </html>
