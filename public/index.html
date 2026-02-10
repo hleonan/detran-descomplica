@@ -788,7 +788,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 29, 61, 0.85);
+            background: rgba(0, 29, 61, 0.92);
             backdrop-filter: blur(15px);
             z-index: 2000;
             flex-direction: column;
@@ -797,6 +797,7 @@
             text-align: center;
             color: white;
             transition: opacity 0.5s ease;
+            padding: 30px;
         }
 
         .smart-loading.active {
@@ -832,7 +833,47 @@
             color: rgba(255, 255, 255, 0.8);
             font-weight: 300;
             letter-spacing: 1px;
-            min-height: 25px; 
+            min-height: 25px;
+            margin-bottom: 25px;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-progress-container {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 20px;
+        }
+
+        .loading-progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .loading-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00D4FF, #00FF88);
+            border-radius: 3px;
+            transition: width 1s ease;
+            width: 0%;
+        }
+
+        .loading-progress-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 1px;
+        }
+
+        .loading-tip {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+            max-width: 350px;
+            line-height: 1.6;
+            margin-top: 15px;
+            font-style: italic;
         }
 
         /* RESPONSIVIDADE */
@@ -1109,6 +1150,15 @@
         <img src="/assets/logo.png" alt="Processando" class="loading-logo">
         <div class="loading-text">Analisando sua CNH</div>
         <div id="loadingStepText" class="loading-step">Conectando ao DETRAN...</div>
+        <div class="loading-progress-container">
+            <div class="loading-progress-bar">
+                <div id="loadingProgressFill" class="loading-progress-fill"></div>
+            </div>
+            <div id="loadingProgressLabel" class="loading-progress-label">Etapa 1 de 6</div>
+        </div>
+        <div id="loadingTip" class="loading-tip">
+            Estamos acessando o sistema oficial do DETRAN-RJ. Esse processo pode levar de 30 a 60 segundos.
+        </div>
     </div>
 
     <!-- CAMERA MODAL -->
@@ -1147,34 +1197,57 @@
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
 
       // ==========================================
-      // SISTEMA DE LOADING INTELIGENTE
+      // SISTEMA DE LOADING INTELIGENTE (MELHORADO)
       // ==========================================
       let loadingInterval;
-      const loadingMessages = [
-          "Conectando ao sistema do DETRAN-RJ...",
-          "Resolvendo Captcha de segurança...",
-          "Buscando infrações e pontuação...",
-          "Analisando processos de suspensão...",
-          "Gerando Certidão Digital...",
-          "Gravando protocolo de atendimento..."
+      let loadingStepIndex = 0;
+
+      // Mensagens sequenciais que simulam o progresso real da automação
+      const loadingSteps = [
+          { msg: "Iniciando conexão segura com o DETRAN-RJ...", pct: 5, tip: "Estamos acessando o sistema oficial do DETRAN-RJ. Esse processo pode levar de 30 a 60 segundos." },
+          { msg: "Acessando o portal de infrações...", pct: 12, tip: "O site do DETRAN pode demorar um pouco para responder. Fique tranquilo, estamos trabalhando." },
+          { msg: "Preenchendo seus dados no formulário...", pct: 20, tip: "Seus dados estão sendo inseridos de forma segura no sistema do governo." },
+          { msg: "Resolvendo verificação de segurança (Captcha)...", pct: 30, tip: "O DETRAN exige uma verificação anti-robô. Nosso sistema resolve isso automaticamente para você." },
+          { msg: "Captcha enviado. Aguardando validação...", pct: 45, tip: "A validação do Captcha pode levar alguns segundos. É o passo mais demorado do processo." },
+          { msg: "Captcha resolvido! Enviando consulta...", pct: 55, tip: "Ótimo! A verificação foi aprovada. Agora estamos consultando seu prontuário." },
+          { msg: "Consultando seu prontuário no DETRAN...", pct: 65, tip: "O sistema está buscando todas as informações sobre infrações, multas e processos vinculados à sua CNH." },
+          { msg: "Analisando resultado da consulta...", pct: 75, tip: "Estamos verificando se existem pendências, multas ou processos de suspensão." },
+          { msg: "Gerando sua Certidão Digital...", pct: 85, tip: "A certidão está sendo gerada com os dados oficiais do DETRAN-RJ." },
+          { msg: "Finalizando e salvando documento...", pct: 92, tip: "Quase pronto! Estamos preparando o resultado para você." },
+          { msg: "Verificação completa. Preparando resultado...", pct: 97, tip: "Tudo certo! Em instantes você verá o resultado da sua consulta." },
       ];
 
       function startSmartLoading(initialMessage = "Processando...") {
           const overlay = document.getElementById("smartLoading");
           const stepText = document.getElementById("loadingStepText");
-          let index = 0;
-          
+          const progressFill = document.getElementById("loadingProgressFill");
+          const progressLabel = document.getElementById("loadingProgressLabel");
+          const tipEl = document.getElementById("loadingTip");
+          loadingStepIndex = 0;
+
           if(overlay) {
             overlay.classList.add("active");
             if(stepText) stepText.innerText = initialMessage;
+            if(progressFill) progressFill.style.width = "3%";
+            if(progressLabel) progressLabel.innerText = "Etapa 1 de " + loadingSteps.length;
+            if(tipEl) tipEl.innerText = loadingSteps[0]?.tip || "";
           }
 
           if(loadingInterval) clearInterval(loadingInterval);
 
+          // Avança as mensagens a cada 4-7 segundos (variável para parecer natural)
           loadingInterval = setInterval(() => {
-              index = (index + 1) % loadingMessages.length;
-              if(stepText) stepText.innerText = loadingMessages[index];
-          }, 2500);
+              loadingStepIndex++;
+              if (loadingStepIndex >= loadingSteps.length) {
+                  // Fica no último passo, não reseta
+                  loadingStepIndex = loadingSteps.length - 1;
+              }
+              const step = loadingSteps[loadingStepIndex];
+              if(stepText) stepText.innerText = step.msg;
+              if(progressFill) progressFill.style.width = step.pct + "%";
+              if(progressLabel) progressLabel.innerText = `Etapa ${loadingStepIndex + 1} de ${loadingSteps.length}`;
+              if(tipEl) tipEl.innerText = step.tip;
+          }, 4500 + Math.random() * 2500); // 4.5s a 7s entre cada etapa
       }
 
       function updateLoadingMessage(msg) {
@@ -1182,10 +1255,21 @@
           if(stepText) stepText.innerText = msg;
       }
 
+      function updateLoadingProgress(pct) {
+          const progressFill = document.getElementById("loadingProgressFill");
+          if(progressFill) progressFill.style.width = pct + "%";
+      }
+
       function stopSmartLoading() {
           const overlay = document.getElementById("smartLoading");
-          if(overlay) overlay.classList.remove("active");
-          if(loadingInterval) clearInterval(loadingInterval);
+          const progressFill = document.getElementById("loadingProgressFill");
+          if(progressFill) progressFill.style.width = "100%";
+          // Pequeno delay para o usuário ver 100%
+          setTimeout(() => {
+              if(overlay) overlay.classList.remove("active");
+              if(loadingInterval) clearInterval(loadingInterval);
+              if(progressFill) progressFill.style.width = "0%";
+          }, 400);
       }
 
       // ==========================================
@@ -1337,10 +1421,12 @@
        * Envia a foto capturada para o OCR no backend
        */
       async function enviarFotoParaOCR(blob) {
+        origemDados = "camera"; // Rastrear origem para o lead
         startSmartLoading("Lendo foto da CNH...");
 
         const formData = new FormData();
         formData.append("doc", blob, "cnh_foto.jpg");
+        formData.append("origem", "camera");
 
         try {
           const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
@@ -1390,6 +1476,9 @@
       // ==========================================
       // LÓGICA PRINCIPAL: ANÁLISE (CONSULTAR CERTIDÃO)
       // ==========================================
+      // Variável para rastrear a origem dos dados (lead)
+      let origemDados = "manual";
+
       async function handleDataEntry(event) {
         if(event && event.preventDefault) event.preventDefault();
     
@@ -1406,14 +1495,14 @@
     
         const overlay = document.getElementById("smartLoading");
         if (!overlay.classList.contains("active")) {
-            startSmartLoading(loadingMessages[0]);
+            startSmartLoading(loadingSteps[0].msg);
         }
     
         try {
           const resp = await fetch(`${API_URL}/consultar-certidao`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits }),
+            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits, origem: origemDados }),
           });
     
           const data = await resp.json();
@@ -1426,7 +1515,8 @@
 
           // SUCESSO: TRANSIÇÃO AUTOMÁTICA
           if(loadingInterval) clearInterval(loadingInterval);
-          updateLoadingMessage("Consulta finalizada!");
+          updateLoadingMessage("Consulta finalizada com sucesso!");
+          updateLoadingProgress(100);
           await new Promise(resolve => setTimeout(resolve, 1500));
           stopSmartLoading();
     
@@ -1437,30 +1527,83 @@
           const btnAction = document.getElementById("btn-result-action");
           const btnSecondary = document.getElementById("btn-result-secondary");
 
+          // Nome do motorista (se veio da certidão)
+          const nomeMotorista = data.nome ? `<strong>${data.nome}</strong>` : "Motorista";
+
           if (data.temProblemas) {
+            // ========================================
+            // RESULTADO: COM OCORRÊNCIA / RESTRIÇÃO
+            // ========================================
             icon.innerText = "⚠️";
-            title.innerText = "SUA CNH PODE ESTAR EM RISCO";
-            title.style.color = "#FF4B2B"; 
+            title.innerText = "ATENÇÃO: FORAM ENCONTRADAS OCORRÊNCIAS";
+            title.style.color = "#FF4B2B";
             
-            const motivoTexto = data.motivo || "Identificamos pendências no prontuário.";
-            msg.innerHTML = `<strong>${motivoTexto}</strong><br>
-                             É necessário agir imediatamente.`;
+            msg.innerHTML = `
+              <div style="text-align: left; max-width: 550px; margin: 0 auto;">
+                <p style="font-size: 18px; margin-bottom: 15px;">
+                  ${nomeMotorista}, identificamos <strong style="color: #FF4B2B;">pendências</strong> no seu prontuário junto ao DETRAN-RJ.
+                </p>
+                <p style="font-size: 16px; color: #555; margin-bottom: 15px;">
+                  <strong>Motivo:</strong> ${data.motivo || "Restrição identificada na certidão."}
+                </p>
+                <div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <p style="font-size: 14px; color: #856404; margin: 0;">
+                    <strong>O que isso significa?</strong><br>
+                    Existem infrações, multas ou processos vinculados à sua CNH. 
+                    Isso pode levar à <strong>suspensão do direito de dirigir</strong> se não for resolvido.
+                  </p>
+                </div>
+                <div style="background: #F8D7DA; border-left: 4px solid #DC3545; padding: 15px; border-radius: 8px;">
+                  <p style="font-size: 14px; color: #721C24; margin: 0;">
+                    <strong>Recomendação:</strong> Consulte um despachante especializado para avaliar suas opções de defesa e recurso antes que o prazo expire.
+                  </p>
+                </div>
+              </div>`;
             
-            btnAction.innerText = "CLIQUE AQUI PARA CONTINUAR";
+            btnAction.innerText = "VER SERVIÇOS DISPONÍVEIS";
             btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)";
-            btnAction.onclick = () => goToScreen4(); 
-            btnSecondary.style.display = "none"; 
+            btnAction.onclick = () => goToScreen4();
+
+            // Botão secundário para baixar a certidão mesmo com restrição
+            btnSecondary.style.display = "block";
+            btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
+            btnSecondary.style.background = "#6c757d";
+            btnSecondary.onclick = () => {
+                if(data.caseId) {
+                    window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+                } else {
+                    alert("Certidão não disponível.");
+                }
+            };
 
           } else {
+            // ========================================
+            // RESULTADO: NADA CONSTA (TUDO OK)
+            // ========================================
             icon.innerText = "✅";
-            title.innerText = "Tudo Certo com sua CNH!";
-            title.style.color = "#28A745"; 
+            title.innerText = "PARABÉNS! SUA CNH ESTÁ LIMPA";
+            title.style.color = "#28A745";
             
-            msg.innerHTML = `Não encontramos nenhuma irregularidade.<br>
-                             Sua certidão Nada Consta foi gerada com sucesso.`;
+            msg.innerHTML = `
+              <div style="text-align: left; max-width: 550px; margin: 0 auto;">
+                <p style="font-size: 18px; margin-bottom: 15px;">
+                  ${nomeMotorista}, não encontramos <strong style="color: #28A745;">nenhuma irregularidade</strong> no seu prontuário junto ao DETRAN-RJ.
+                </p>
+                <div style="background: #D4EDDA; border-left: 4px solid #28A745; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <p style="font-size: 14px; color: #155724; margin: 0;">
+                    <strong>Certidão de Nada Consta</strong> emitida com sucesso!<br>
+                    Não constam infrações de trânsito, multas, pontuação, suspensão do direito de dirigir ou cassação da CNH no sistema do DETRAN-RJ.
+                    ${data.numeroCertidao ? '<br><br><strong>Nº da Certidão:</strong> ' + data.numeroCertidao : ''}
+                  </p>
+                </div>
+                <p style="font-size: 13px; color: #888;">
+                  <strong>Validade:</strong> Esta certidão tem validade de 24 horas a partir da emissão.
+                  A autenticidade pode ser confirmada no site oficial do DETRAN-RJ.
+                </p>
+              </div>`;
             
-            btnAction.innerText = "CLIQUE AQUI PARA EMITIR A CERTIDÃO NADA CONSTA";
-            btnAction.style.background = "#28A745";
+            btnAction.innerText = "BAIXAR CERTIDÃO NADA CONSTA (PDF)";
+            btnAction.style.background = "linear-gradient(135deg, #28A745 0%, #20c997 100%)";
             btnAction.onclick = () => {
                 if(data.caseId) {
                     window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
@@ -1470,10 +1613,13 @@
             };
 
             btnSecondary.style.display = "block";
-            btnSecondary.innerText = "MAIS SERVIÇOS CLIQUE AQUI";
-            btnSecondary.onclick = () => goToScreen5(); 
+            btnSecondary.innerText = "EXPLORAR MAIS SERVIÇOS";
+            btnSecondary.style.background = "#003D7A";
+            btnSecondary.onclick = () => goToScreen5();
           }
 
+          // Reset origem para próxima consulta
+          origemDados = "manual";
           goToScreen3();
 
         } catch (e) {
@@ -1511,7 +1657,7 @@
             previewImg.src = previewUrl;
             previewContainer.classList.add("active");
 
-            await processarArquivoOCR(file);
+            await processarArquivoOCR(file, "camera");
           });
         }
       });
@@ -1519,11 +1665,13 @@
       /**
        * Processa arquivo (upload ou foto) via OCR
        */
-      async function processarArquivoOCR(file) {
+      async function processarArquivoOCR(file, origem = "upload") {
+        origemDados = origem; // Rastrear origem para o lead
         startSmartLoading("Lendo documento da CNH..."); 
 
         const formData = new FormData();
         formData.append("doc", file);
+        formData.append("origem", origem);
 
         try {
           const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });

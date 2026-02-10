@@ -15,6 +15,15 @@ import { extractCertidaoTextFromBuffer } from "../certidaoParser.js";
 import { classificarCertidao } from "../certidaoClassifier.js";
 import PontuacaoAutomation from "../pontuacaoAutomation.mjs";
 
+// Sistema de Leads
+import {
+  registrarLead,
+  extrairDadosDaCertidao,
+  buscarLead,
+  listarLeads,
+  estatisticasLeads,
+} from "../services/leadStore.js";
+
 const router = express.Router();
 
 // =========================
@@ -22,7 +31,7 @@ const router = express.Router();
 // =========================
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 12 * 1024 * 1024 }, // 12MB
+  limits: { fileSize: 12 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ok = ["application/pdf", "image/jpeg", "image/png"].includes(file.mimetype);
     if (!ok) return cb(new Error("Tipo inválido. Envie PDF, JPG ou PNG."));
@@ -68,6 +77,9 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     cleanupOCRJobs();
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado." });
 
+    // Detectar origem (upload ou camera)
+    const origem = req.body?.origem || "upload";
+
     // --- FLUXO 1: PDF (Via Google Cloud Storage) ---
     if (req.file.mimetype === "application/pdf") {
       const bucketName = process.env.OCR_BUCKET;
@@ -83,7 +95,6 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       const inputPath = `ocr/input/${jobId}.pdf`;
       const outputPrefix = `ocr/output/${jobId}/`;
 
-      // Salva PDF no Bucket
       await bucket.file(inputPath).save(req.file.buffer, {
         contentType: "application/pdf",
         resumable: false,
@@ -92,7 +103,6 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       const gcsInUri = `gs://${bucketName}/${inputPath}`;
       const gcsOutUri = `gs://${bucketName}/${outputPrefix}`;
 
-      // Dispara Vision API (Async)
       const request = {
         requests: [
           {
@@ -105,11 +115,11 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
 
       await visionClient.asyncBatchAnnotateFiles(request);
 
-      // Salva estado do Job
       ocrJobStore.set(jobId, {
         status: "processing",
         createdAt: Date.now(),
         gcsOutPrefix: outputPrefix,
+        origem,
       });
 
       return res.json({ jobId });
@@ -119,28 +129,35 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     const apiKey = process.env.GOOGLE_VISION_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "Chave de API Vision não configurada." });
 
-    // Salva arquivo temporário para a classe ler
     const ext = req.file.mimetype === "image/png" ? ".png" : ".jpg";
     const tmpPath = path.join("/tmp", `cnh_upload_${Date.now()}${ext}`);
     fs.writeFileSync(tmpPath, req.file.buffer);
 
-    // Inicializa extrator
     const ocr = new OCRExtractor(apiKey);
-    
-    // Chama extrairTextoImagem que agora retorna dados.cpf e dados.cnh
-    const result = await ocr.extrairTextoImagem(tmpPath); 
+    const result = await ocr.extrairTextoImagem(tmpPath);
 
-    try { fs.unlinkSync(tmpPath); } catch {} // Limpa temp
+    try { fs.unlinkSync(tmpPath); } catch {}
 
     if (!result?.sucesso) {
       return res.status(422).json({ error: result?.erro || "Falha na leitura da imagem." });
     }
 
-    return res.json({
-      cpf: result.dados?.cpf || null,
-      cnh: result.dados?.cnh || null,
-      nome: result.dados?.nome || null
-    });
+    const cpf = result.dados?.cpf || null;
+    const cnh = result.dados?.cnh || null;
+    const nome = result.dados?.nome || null;
+
+    // REGISTRAR LEAD (dados do OCR)
+    if (cpf) {
+      registrarLead({
+        cpf,
+        cnh,
+        nome,
+        origem,
+        status: "DESCONHECIDO", // Ainda não consultou a certidão
+      });
+    }
+
+    return res.json({ cpf, cnh, nome });
 
   } catch (err) {
     console.error("Erro /api/ocr-cnh:", err);
@@ -159,7 +176,6 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     if (!job) return res.status(404).json({ status: "not_found" });
     if (job.status === "done") return res.json({ status: "done", ...job.result });
 
-    // Verifica bucket
     const bucketName = process.env.OCR_BUCKET;
     if (!bucketName || !storage) return res.json({ status: "processing" });
 
@@ -169,22 +185,30 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
 
     if (!jsonFile) return res.json({ status: "processing" });
 
-    // Processa resultado
     const [buf] = await jsonFile.download();
     const parsed = JSON.parse(buf.toString("utf8"));
     const text = parsed?.responses?.[0]?.fullTextAnnotation?.text || "";
 
-    // Extração via Regex
     const cpfMatch = text.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
-    const cnhMatch = text.match(/(?<!\d)\d{11}(?!\d)/); 
+    const cnhMatch = text.match(/(?<!\d)\d{11}(?!\d)/);
+
+    const cpf = cpfMatch ? cpfMatch[0].replace(/\D/g, "") : null;
+    const cnh = cnhMatch ? cnhMatch[0] : null;
 
     job.status = "done";
-    job.result = {
-      cpf: cpfMatch ? cpfMatch[0].replace(/\D/g, '') : null,
-      cnh: cnhMatch ? cnhMatch[0] : null
-    };
+    job.result = { cpf, cnh };
 
-    return res.json({ status: "done", ...job.result });
+    // REGISTRAR LEAD (dados do OCR PDF)
+    if (cpf) {
+      registrarLead({
+        cpf,
+        cnh,
+        origem: job.origem || "upload",
+        status: "DESCONHECIDO",
+      });
+    }
+
+    return res.json({ status: "done", cpf, cnh });
 
   } catch (err) {
     return res.status(500).json({ status: "error", error: err.message });
@@ -195,7 +219,7 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
 // ROTA: Consultar Certidão (Detran)
 // =========================
 const certidaoStore = new Map();
-const CERTIDAO_TTL_MS = 30 * 60 * 1000; // 30 minutos
+const CERTIDAO_TTL_MS = 30 * 60 * 1000;
 
 function cleanupCertidoes() {
   const now = Date.now();
@@ -207,16 +231,42 @@ function cleanupCertidoes() {
 router.post("/consultar-certidao", async (req, res) => {
   try {
     cleanupCertidoes();
-    const { cpf, cnh } = req.body || {};
+    const { cpf, cnh, origem } = req.body || {};
     if (!cpf || !cnh) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
+
+    // REGISTRAR LEAD (início da consulta - dados manuais)
+    registrarLead({
+      cpf,
+      cnh,
+      origem: origem || "manual",
+      status: "DESCONHECIDO",
+    });
 
     // Chama a automação do Playwright
     const pdfBuffer = await emitirCertidaoPDF(cpf, cnh);
 
     // Analisa o texto do PDF
-    const { normalizedText } = await extractCertidaoTextFromBuffer(pdfBuffer);
+    const { normalizedText, rawText } = await extractCertidaoTextFromBuffer(pdfBuffer);
     const analysis = classificarCertidao(normalizedText);
-    
+
+    // EXTRAIR DADOS PESSOAIS DA CERTIDÃO
+    const dadosCertidao = extrairDadosDaCertidao(normalizedText);
+
+    // ATUALIZAR LEAD com dados da certidão
+    registrarLead({
+      cpf,
+      cnh,
+      nome: dadosCertidao.nome || null,
+      origem: origem || "manual",
+      status: analysis.status,
+      motivo: analysis.motivo,
+      extras: {
+        numeroCertidao: dadosCertidao.numeroCertidao || null,
+        dataConsulta: new Date().toISOString(),
+        temProblemas: analysis.status === "RESTRICAO",
+      },
+    });
+
     // Salva na memória temporária para download
     const caseId = `c_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     certidaoStore.set(caseId, { pdfBuffer, createdAt: Date.now() });
@@ -226,7 +276,9 @@ router.post("/consultar-certidao", async (req, res) => {
       caseId,
       temProblemas: analysis.status === "RESTRICAO",
       motivo: analysis.motivo,
-      status: analysis.status
+      status: analysis.status,
+      nome: dadosCertidao.nome || null,
+      numeroCertidao: dadosCertidao.numeroCertidao || null,
     });
 
   } catch (err) {
@@ -241,7 +293,7 @@ router.post("/consultar-certidao", async (req, res) => {
 router.get("/certidao/:caseId", (req, res) => {
   const item = certidaoStore.get(req.params.caseId);
   if (!item) return res.status(404).send("Certidão expirada ou não encontrada.");
-  
+
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", 'inline; filename="certidao_nada_consta.pdf"');
   res.send(item.pdfBuffer);
@@ -254,7 +306,7 @@ router.post("/consultar-multas", async (req, res) => {
   try {
     const { cpf, cnh } = req.body;
     const apiKey = process.env.TWOCAPTCHA_API_KEY;
-    
+
     if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
 
     const automation = new PontuacaoAutomation(apiKey);
@@ -265,12 +317,48 @@ router.post("/consultar-multas", async (req, res) => {
     return res.json({
       ok: true,
       multas: resultado.multas || [],
-      resumo: resultado.resumo || {}
+      resumo: resultado.resumo || {},
     });
 
   } catch (err) {
     console.error("Erro multas:", err);
     return res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// =========================
+// ROTAS DE LEADS (Gestão)
+// =========================
+
+// Listar todos os leads
+router.get("/leads", (req, res) => {
+  try {
+    const leads = listarLeads();
+    const stats = estatisticasLeads();
+    return res.json({ ok: true, leads, stats });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Buscar lead por CPF
+router.get("/leads/:cpf", (req, res) => {
+  try {
+    const lead = buscarLead(req.params.cpf);
+    if (!lead) return res.status(404).json({ ok: false, error: "Lead não encontrado." });
+    return res.json({ ok: true, lead });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Estatísticas dos leads
+router.get("/leads-stats", (req, res) => {
+  try {
+    const stats = estatisticasLeads();
+    return res.json({ ok: true, stats });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
