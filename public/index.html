@@ -953,7 +953,7 @@
           "Buscando infrações e pontuação...",
           "Analisando processos de suspensão...",
           "Gerando Certidão Digital...",
-          "Finalizando relatório..."
+          "Gravando protocolo de atendimento..."
       ];
 
       function startSmartLoading(initialMessage = "Processando...") {
@@ -966,13 +966,19 @@
             if(stepText) stepText.innerText = initialMessage;
           }
 
+          // Limpa intervalo anterior se existir
+          if(loadingInterval) clearInterval(loadingInterval);
+
           // Troca a mensagem a cada 2.5 segundos
-          if(loadingMessages.length > 0) {
-             loadingInterval = setInterval(() => {
-                index = (index + 1) % loadingMessages.length;
-                if(stepText) stepText.innerText = loadingMessages[index];
-             }, 2500);
-          }
+          loadingInterval = setInterval(() => {
+              index = (index + 1) % loadingMessages.length;
+              if(stepText) stepText.innerText = loadingMessages[index];
+          }, 2500);
+      }
+
+      function updateLoadingMessage(msg) {
+          const stepText = document.getElementById("loadingStepText");
+          if(stepText) stepText.innerText = msg;
       }
 
       function stopSmartLoading() {
@@ -1013,26 +1019,27 @@
       // LÓGICA PRINCIPAL: ANÁLISE (CONSULTAR CERTIDÃO)
       // ==========================================
       async function handleDataEntry(event) {
-        if(event) event.preventDefault();
+        if(event && event.preventDefault) event.preventDefault();
     
         const cpfField = document.getElementById("cpf");
         const cnhField = document.getElementById("cnh");
         const cpf = cpfField.value;
         const cnh = cnhField.value;
     
-        if (!validarCPF(cpf)) return alert("CPF inválido!");
-        // Algumas CNHs antigas podem ter menos dígitos, mas geralmente validamos 9 a 11
-        if (cnh.length < 9) return alert("CNH inválida!");
+        if (!validarCPF(cpf)) { stopSmartLoading(); return alert("CPF inválido!"); }
+        if (cnh.length < 9) { stopSmartLoading(); return alert("CNH inválida!"); }
     
         const cpfDigits = cpf.replace(/\D/g, "");
         const cnhDigits = cnh.replace(/\D/g, "");
     
-        // 1. INICIA O LOADING
-        startSmartLoading(loadingMessages[0]);
+        // Se já não estiver rodando (veio do clique manual), inicia
+        const overlay = document.getElementById("smartLoading");
+        if (!overlay.classList.contains("active")) {
+            startSmartLoading(loadingMessages[0]);
+        }
     
         try {
-          // 2. CHAMA O BACKEND REAL (Node.js)
-          // Rota ajustada para o seu api.js: /consultar-certidao
+          // CHAMA O BACKEND REAL
           const resp = await fetch(`${API_URL}/consultar-certidao`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1041,51 +1048,57 @@
     
           const data = await resp.json();
           
-          // 3. PARA O LOADING
-          stopSmartLoading();
-    
           if (!resp.ok || !data.ok) {
+            stopSmartLoading();
             alert("Erro: " + (data.error || "Falha na consulta. Verifique os dados."));
             return;
           }
+
+          // === SUCESSO: TRANSIÇÃO AUTOMÁTICA ===
+          
+          // 1. Para o loop de mensagens aleatórias
+          if(loadingInterval) clearInterval(loadingInterval);
+          
+          // 2. Mostra a mensagem final que você pediu
+          updateLoadingMessage("Consulta finalizada!");
+          
+          // 3. Aguarda 1.5 segundos para o usuário ler "Consulta finalizada"
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          // 4. Para o loading e troca de tela
+          stopSmartLoading();
     
-          // 4. CONFIGURA A TELA 3 DINAMICAMENTE
+          // CONFIGURA A TELA 3 DINAMICAMENTE
           const icon = document.getElementById("result-icon");
           const title = document.getElementById("result-title");
           const msg = document.getElementById("result-message");
           const btnAction = document.getElementById("btn-result-action");
           const btnSecondary = document.getElementById("btn-result-secondary");
 
-          // Seu api.js retorna { temProblemas: true/false, status: "RESTRICAO"|"OK", motivo: "..." }
           if (data.temProblemas) {
             // --- CENÁRIO A: COM RISCO ---
             icon.innerText = "⚠️";
             title.innerText = "SUA CNH PODE ESTAR EM RISCO";
-            title.style.color = "#FF4B2B"; // Vermelho Alerta
+            title.style.color = "#FF4B2B"; 
             
-            // Usa o motivo que vem do backend ou texto padrão
             const motivoTexto = data.motivo || "Identificamos pendências no prontuário.";
             msg.innerHTML = `<strong>${motivoTexto}</strong><br>
                              É necessário agir imediatamente.`;
             
-            // Botão Principal -> TELA 4 (Soluções)
             btnAction.innerText = "CLIQUE AQUI PARA CONTINUAR";
             btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)";
             btnAction.onclick = () => goToScreen4(); 
-            
             btnSecondary.style.display = "none"; 
 
           } else {
             // --- CENÁRIO B: NADA CONSTA ---
             icon.innerText = "✅";
             title.innerText = "Tudo Certo com sua CNH!";
-            title.style.color = "#28A745"; // Verde Sucesso
+            title.style.color = "#28A745"; 
             
             msg.innerHTML = `Não encontramos nenhuma irregularidade.<br>
                              Sua certidão Nada Consta foi gerada com sucesso.`;
             
-            // Botão Principal -> Baixar PDF
-            // Rota ajustada para o seu api.js: /certidao/:caseId
             btnAction.innerText = "CLIQUE AQUI PARA EMITIR A CERTIDÃO NADA CONSTA";
             btnAction.style.background = "#28A745";
             btnAction.onclick = () => {
@@ -1096,12 +1109,12 @@
                 }
             };
 
-            // Botão Secundário -> TELA 5
             btnSecondary.style.display = "block";
             btnSecondary.innerText = "MAIS SERVIÇOS CLIQUE AQUI";
             btnSecondary.onclick = () => goToScreen5(); 
           }
 
+          // Vai para a tela 3 automaticamente
           goToScreen3();
 
         } catch (e) {
@@ -1112,7 +1125,7 @@
       }
 
       // ==========================================
-      // LÓGICA DE UPLOAD (OCR)
+      // LÓGICA DE UPLOAD (OCR) - FLUXO AUTOMÁTICO
       // ==========================================
       document.addEventListener("DOMContentLoaded", () => {
         const input = document.getElementById("fileUpload");
@@ -1121,29 +1134,33 @@
           const file = e.target.files?.[0];
           if (!file) return;
 
-          startSmartLoading("Lendo documento com IA..."); 
+          // 1. Inicia Loading IMEDIATAMENTE
+          startSmartLoading("Lendo imagem da CNH..."); 
 
           const formData = new FormData();
           formData.append("doc", file);
 
           try {
-            // Rota ajustada para o seu api.js: /ocr-cnh
             const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
             const data = await resp.json();
             
-            // Se for PDF, o backend devolve { jobId } e precisamos esperar (polling)
             if (resp.ok && data.jobId) {
-                document.getElementById("loadingStepText").innerText = "Processando PDF (pode levar alguns segundos)...";
+                updateLoadingMessage("Processando PDF (aguarde)...");
                 monitorarJobOCR(data.jobId);
                 return;
             }
 
-            stopSmartLoading();
-
-            // Se for Imagem, a resposta já vem com { cpf, cnh }
             if (resp.ok && (data.cpf || data.cnh)) {
-                preencherEConfirmar(data);
+                // 2. Preenche os campos (invisível pro usuário ver o loading)
+                if(data.cpf) document.getElementById("cpf").value = data.cpf;
+                if(data.cnh) document.getElementById("cnh").value = data.cnh;
+                
+                // 3. CHAMA A CONSULTA AUTOMATICAMENTE (Sem parar o loading)
+                updateLoadingMessage("Dados extraídos. Iniciando consulta...");
+                handleDataEntry(null); // Passa null pois não é evento de clique
+
             } else {
+                stopSmartLoading();
                 alert("Erro: " + (data.error || "Não foi possível ler os dados da imagem."));
             }
           } catch(err) {
@@ -1153,18 +1170,20 @@
         });
       });
 
-      // Função para monitorar PDF (Polling)
       async function monitorarJobOCR(jobId) {
         const start = Date.now();
-        // Tenta por 60 segundos
         while (Date.now() - start < 60000) {
-            await new Promise(r => setTimeout(r, 2000)); // Espera 2s
+            await new Promise(r => setTimeout(r, 2000)); 
             try {
                 const r = await fetch(`${API_URL}/ocr-cnh/status/${jobId}`);
                 const d = await r.json();
                 if (d.status === "done") {
-                    stopSmartLoading();
-                    preencherEConfirmar(d);
+                    // Sucesso no PDF -> Preenche e Segue automático
+                    if(d.cpf) document.getElementById("cpf").value = d.cpf;
+                    if(d.cnh) document.getElementById("cnh").value = d.cnh;
+                    
+                    updateLoadingMessage("PDF processado. Iniciando consulta...");
+                    handleDataEntry(null);
                     return;
                 }
                 if (d.status === "error") {
@@ -1178,96 +1197,7 @@
         alert("O processamento do PDF demorou demais.");
       }
 
-      function preencherEConfirmar(dados) {
-        if(dados.cpf) document.getElementById("cpf").value = dados.cpf;
-        if(dados.cnh) document.getElementById("cnh").value = dados.cnh;
-        
-        // Formata visualização para o usuário
-        const msg = `Leitura concluída!\n\nCPF: ${dados.cpf || 'Não identificado'}\nCNH: ${dados.cnh || 'Não identificado'}\n\nDeseja consultar agora?`;
-        
-        // Pequeno delay para a tela limpar o loading
-        setTimeout(() => {
-            if(confirm(msg)) {
-                handleDataEntry(new Event('submit'));
-            }
-        }, 100);
-      }
-
-      // ==========================================
-      // CONSULTA DE MULTAS (Tela 6)
-      // ==========================================
-      async function consultarMultas() {
-        const cpf = localStorage.getItem("USER_CPF") || document.getElementById("cpf").value; // Tenta pegar do cache ou do input
-        const cnh = localStorage.getItem("USER_CNH") || document.getElementById("cnh").value; 
-        
-        // Limpa para envio
-        const cpfLimpo = cpf.replace(/\D/g, "");
-        const cnhLimpo = cnh.replace(/\D/g, "");
-
-        if (!cpfLimpo || !cnhLimpo) { 
-            alert("Por favor, preencha seus dados na tela inicial primeiro."); 
-            goToScreen2(); 
-            return; 
-        }
-
-        document.getElementById("multas-loading").style.display = "block";
-        document.getElementById("multas-resumo").style.display = "none";
-        document.getElementById("multas-lista").innerHTML = "";
-
-        try {
-          // Rota ajustada para o seu api.js: /consultar-multas
-          const resp = await fetch(`${API_URL}/consultar-multas`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf: cpfLimpo, cnh: cnhLimpo })
-          });
-
-          const data = await resp.json();
-          if (!resp.ok || !data.ok) throw new Error(data.error || "Erro ao consultar multas");
-
-          document.getElementById("multas-loading").style.display = "none";
-          document.getElementById("pontos-totais").textContent = data.resumo?.pontosTotais || "0";
-          document.getElementById("multas-pendentes").textContent = data.resumo?.multasPendentes || "0";
-          document.getElementById("situacao-cnh").textContent = data.resumo?.situacao || "Regular";
-          document.getElementById("multas-resumo").style.display = "grid";
-
-          const totalMultas = data.multas?.length || 0;
-          document.getElementById("multas-subtitle").textContent =
-            totalMultas > 0 ? `Encontramos ${totalMultas} multa(s) registrada(s)` : "Nenhuma multa encontrada";
-
-          // Renderiza a lista
-          const listaHTML = (totalMultas === 0)
-            ? `<div class="multas-empty"><div class="multas-empty-icon">✅</div><h3 class="multas-empty-title">Parabéns!</h3><p class="multas-empty-text">Você não possui multas pendentes.</p></div>`
-            : data.multas.map((multa, index) => `
-                <div class="multa-card">
-                  <div class="multa-header">
-                    <div class="multa-data">📅 ${multa.data || "-"}</div>
-                    <div class="multa-status ${multa.status && multa.status.toLowerCase().includes('pago') ? "status-pago" : "status-pendente"}">${multa.status || "Pendente"}</div>
-                  </div>
-                  <div class="multa-descricao">${multa.descricao || "Sem descrição"}</div>
-                  <div class="multa-detalhes">
-                    <div class="multa-detalhe"><div class="detalhe-label">Pontos</div><div class="detalhe-value">${multa.pontos || "0"}</div></div>
-                    <div class="multa-detalhe"><div class="detalhe-label">Valor</div><div class="detalhe-value">${multa.valor || "R$ 0,00"}</div></div>
-                  </div>
-                  <div class="multa-actions">
-                    <button class="btn-recorrer" onclick="alert('Recurso em desenvolvimento')">⚖️ Recorrer</button>
-                    <button class="btn-pagar" onclick="alert('Pagamento em desenvolvimento')">💳 Pagar</button>
-                  </div>
-                </div>
-              `).join("");
-              
-          document.getElementById("multas-lista").innerHTML = listaHTML;
-
-        } catch (err) {
-          document.getElementById("multas-loading").style.display = "none";
-          document.getElementById("multas-lista").innerHTML =
-            `<div class="multas-empty"><div class="multas-empty-icon">⚠️</div><h3 class="multas-empty-title">Erro</h3><p class="multas-empty-text">${err.message}</p></div>`;
-        }
-      }
-
-      // ==========================================
-      // OUTRAS FUNÇÕES DE INTERFACE
-      // ==========================================
+      // Funções Placeholder
       function abrirCertidao() { alert("Use a consulta na tela inicial para gerar a certidão."); }
       function selectService(s) { alert("Serviço selecionado: " + s); }
       function selectOtherService(s) { alert("Outro Serviço: " + s); }
