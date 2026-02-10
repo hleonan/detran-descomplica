@@ -3,8 +3,7 @@
 // Baseado no código funcional do Mac (server.mjs) - adaptado para Playwright
 //
 // ESTRATÉGIA: Acessar DIRETAMENTE a URL do iframe (www2.detran.rj.gov.br)
-// em vez de navegar pela página principal (www.detran.rj.gov.br).
-// Isso é exatamente o que o código do Mac fazia com Puppeteer e funcionava.
+// Classificar o resultado PELO HTML da página (não pelo PDF, que é screenshot/imagem)
 //
 // Seletores: #CertidaoCpf, #CertidaoTipo (value '2' = CNH), #CertidaoCnh, #btPesquisar
 // Sitekey reCAPTCHA: 6LfP47IUAAAAAIwbI5NOKHyvT9Pda17dl0nXl4xv
@@ -36,6 +35,136 @@ async function fillInputHuman(page, selector, value) {
   }, selector);
 }
 
+/**
+ * Analisa o HTML da página de resultado para classificar a certidão
+ * Retorna: { temProblemas, status, motivo, nome, numeroCertidao, dados }
+ */
+async function analisarResultadoPagina(page) {
+  return await page.evaluate(() => {
+    const body = document.body?.innerText || "";
+    const bodyUpper = body.toUpperCase();
+
+    // Extrair nome do motorista
+    let nome = null;
+    const nomeMatch = body.match(/que contra:\s*([A-ZÁÉÍÓÚÃÕÂÊÔÇ\s]+),?\s*vinculado/i);
+    if (nomeMatch) {
+      nome = nomeMatch[1].trim();
+    }
+
+    // Extrair número da certidão
+    let numeroCertidao = null;
+    const certMatch = body.match(/N[°º]:\s*([\d.]+)/);
+    if (certMatch) {
+      numeroCertidao = certMatch[1];
+    }
+
+    // Extrair CPF da certidão
+    let cpfCertidao = null;
+    const cpfMatch = body.match(/CPF:\s*([\d./-]+)/);
+    if (cpfMatch) {
+      cpfCertidao = cpfMatch[1].replace(/\D/g, "");
+    }
+
+    // ============================================
+    // REGRAS DE CLASSIFICAÇÃO (baseadas na análise visual das certidões reais)
+    // ============================================
+
+    // REGRA 1: Se tem "NADA CONSTA" E NÃO tem tabela de infrações → LIMPO
+    const temNadaConsta = bodyUpper.includes("NADA CONSTA");
+    const temTabelaInfracoes = bodyUpper.includes("TODAS AS INFRA");
+    const temCliqueAqui = bodyUpper.includes("CLIQUE AQUI");
+    const temExtrato = bodyUpper.includes("EXTRATO COMPLETO");
+
+    // REGRA 2: Verificar penalidades de suspensão
+    const temSuspensao = bodyUpper.includes("POSSUI") && bodyUpper.includes("SUSPENS");
+    const naoTemSuspensao = bodyUpper.includes("NAO POSSUI") && bodyUpper.includes("SUSPENS");
+    const possuiSuspensaoMatch = body.match(/POSSUI\s+(\d+)\s+PENALIDADE.*SUSPENS/i);
+    const qtdSuspensao = possuiSuspensaoMatch ? parseInt(possuiSuspensaoMatch[1]) : 0;
+
+    // REGRA 3: Verificar penalidades de cassação
+    const temCassacao = bodyUpper.includes("POSSUI") && bodyUpper.includes("CASSA");
+    const possuiCassacaoMatch = body.match(/POSSUI\s+(\d+)\s+PENALIDADE.*CASSA/i);
+    const qtdCassacao = possuiCassacaoMatch ? parseInt(possuiCassacaoMatch[1]) : 0;
+
+    // REGRA 4: Extrair dados da tabela de infrações
+    let infracoesResumo = null;
+    const infracoesMatch = body.match(/Infra.*5 anos\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/i);
+    if (infracoesMatch) {
+      infracoesResumo = {
+        qtdAutos5anos: parseInt(infracoesMatch[1]),
+        autuacao: parseInt(infracoesMatch[2]),
+        penalidade: parseInt(infracoesMatch[3]),
+        transitado: parseInt(infracoesMatch[4]),
+        pontos: parseInt(infracoesMatch[5]),
+      };
+    }
+
+    // ============================================
+    // DECISÃO FINAL
+    // ============================================
+    let temProblemas = false;
+    let status = "OK";
+    let motivo = "Certidão Nada Consta";
+    const detalhes = [];
+
+    // Se tem tabela de infrações ou link "Clique aqui" → TEM OCORRÊNCIA
+    if (temTabelaInfracoes || temCliqueAqui || temExtrato) {
+      temProblemas = true;
+      status = "RESTRICAO";
+
+      if (infracoesResumo && infracoesResumo.qtdAutos5anos > 0) {
+        detalhes.push(`${infracoesResumo.qtdAutos5anos} infração(ões) nos últimos 5 anos`);
+      }
+
+      if (qtdSuspensao > 0) {
+        detalhes.push(`${qtdSuspensao} penalidade(s) de suspensão do direito de dirigir`);
+      }
+
+      if (qtdCassacao > 0) {
+        detalhes.push(`${qtdCassacao} penalidade(s) de cassação da CNH`);
+      }
+
+      if (infracoesResumo && infracoesResumo.pontos > 0) {
+        detalhes.push(`${infracoesResumo.pontos} ponto(s) no prontuário`);
+      }
+
+      motivo = detalhes.length > 0
+        ? detalhes.join(". ") + "."
+        : "Foram encontradas ocorrências no prontuário.";
+    }
+
+    // Se NÃO tem tabela E tem "NADA CONSTA" → LIMPO
+    if (!temTabelaInfracoes && !temCliqueAqui && temNadaConsta) {
+      temProblemas = false;
+      status = "OK";
+      motivo = "Certidão Nada Consta";
+    }
+
+    return {
+      temProblemas,
+      status,
+      motivo,
+      nome,
+      numeroCertidao,
+      cpfCertidao,
+      dados: {
+        temNadaConsta,
+        temTabelaInfracoes,
+        temCliqueAqui,
+        temExtrato,
+        qtdSuspensao,
+        qtdCassacao,
+        infracoesResumo,
+        naoTemSuspensao,
+      },
+    };
+  });
+}
+
+/**
+ * Emite a Certidão de Nada Consta e retorna o PDF + análise
+ * @returns {{ pdfBuffer: Buffer, analise: object }}
+ */
 export async function emitirCertidaoPDF(cpf, cnh) {
   console.error("[DETRAN] ========== INICIANDO ==========");
 
@@ -121,7 +250,6 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.error("[DETRAN] Navegador iniciado.");
 
     // ===== 2. ACESSAR DIRETAMENTE A URL DO FORMULÁRIO =====
-    // Mesma estratégia do Mac: vai direto em www2.detran.rj.gov.br
     console.error(`[DETRAN] Acessando ${CERTIDAO_URL}...`);
     await page.goto(CERTIDAO_URL, { waitUntil: "networkidle", timeout: 60000 });
     console.error(`[DETRAN] Página carregada. URL: ${page.url()}`);
@@ -131,7 +259,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     await fillInputHuman(page, "#CertidaoCpf", cpfDigits);
 
     console.error("[DETRAN] Selecionando tipo CNH...");
-    await page.selectOption("#CertidaoTipo", "2"); // '2' = CNH (mesmo valor do Mac)
+    await page.selectOption("#CertidaoTipo", "2"); // '2' = CNH
     await page.waitForTimeout(600);
 
     console.error("[DETRAN] Preenchendo CNH...");
@@ -146,7 +274,6 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.error(`[DETRAN] Sitekey: ${RECAPTCHA_SITEKEY}`);
     console.error(`[DETRAN] Page URL: ${captchaPageUrl}`);
 
-    // Enviar para 2Captcha (mesma lógica do Mac)
     const submitUrl =
       `https://2captcha.com/in.php?key=${twocaptchaKey}&method=userrecaptcha` +
       `&googlekey=${RECAPTCHA_SITEKEY}&pageurl=${encodeURIComponent(captchaPageUrl)}&json=1`;
@@ -162,7 +289,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     const captchaId = submitData.request;
     console.error(`[DETRAN] Captcha enviado. ID: ${captchaId}. Aguardando resolução...`);
 
-    // Polling (mesma lógica do Mac: 24 tentativas x 5s = 2 min)
+    // Polling (24 tentativas x 5s = 2 min)
     let token = null;
     for (let i = 0; i < 24; i++) {
       await new Promise((r) => setTimeout(r, 5000));
@@ -190,16 +317,14 @@ export async function emitirCertidaoPDF(cpf, cnh) {
 
     if (!token) throw new Error("Timeout na resolução do Captcha (2 minutos).");
 
-    // ===== 5. INJETAR TOKEN (mesma lógica do Mac) =====
+    // ===== 5. INJETAR TOKEN =====
     console.error("[DETRAN] Injetando token reCAPTCHA...");
     await page.evaluate((t) => {
-      // Método 1: textarea g-recaptcha-response (como o Mac fazia)
       let textarea = document.querySelector('textarea[name="g-recaptcha-response"]');
       if (!textarea) {
         textarea = document.getElementById("g-recaptcha-response");
       }
       if (!textarea) {
-        // Criar se não existir (como o Mac fazia)
         textarea = document.createElement("textarea");
         textarea.name = "g-recaptcha-response";
         textarea.id = "g-recaptcha-response";
@@ -209,11 +334,9 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       textarea.value = t;
       textarea.innerHTML = t;
 
-      // Método 2: recaptcha-token
       const tokenEl = document.getElementById("recaptcha-token");
       if (tokenEl) tokenEl.value = t;
 
-      // Método 3: Tentar chamar callback do reCAPTCHA
       try {
         if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
           const findCb = (obj, depth = 0) => {
@@ -251,42 +374,53 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.error("[DETRAN] Aguardando resposta...");
     await page.waitForTimeout(8000);
 
-    // ===== 7. CAPTURAR SCREENSHOT PÁGINA 1 =====
+    // ===== 7. ANALISAR RESULTADO PELO HTML (ANTES de fazer screenshot) =====
+    console.error("[DETRAN] Analisando resultado da página...");
+    const analise = await analisarResultadoPagina(page);
+    console.error(`[DETRAN] Resultado: ${analise.status} - ${analise.motivo}`);
+    console.error(`[DETRAN] Nome: ${analise.nome || "N/A"}`);
+    console.error(`[DETRAN] Certidão Nº: ${analise.numeroCertidao || "N/A"}`);
+    console.error(`[DETRAN] Tem problemas: ${analise.temProblemas}`);
+    console.error(`[DETRAN] Dados: ${JSON.stringify(analise.dados)}`);
+
+    // ===== 8. CAPTURAR SCREENSHOT PÁGINA 1 =====
     console.error("[DETRAN] Capturando screenshot página 1...");
     const shot1 = await page.screenshot({ fullPage: true, type: "png" });
 
-    // ===== 8. PROCURAR LINK PARA EXTRATO COMPLETO (como o Mac fazia) =====
-    console.error("[DETRAN] Procurando link para EMITIR EXTRATO COMPLETO...");
+    // ===== 9. PROCURAR LINK PARA EXTRATO COMPLETO =====
     let shot2 = null;
 
-    try {
-      const linkUrl = await page.evaluate(() => {
-        const links = document.querySelectorAll("a");
-        for (const link of links) {
-          const texto = (link.textContent || "").toLowerCase();
-          if (texto.includes("clique aqui") || texto.includes("extrato")) {
-            return link.href;
+    if (analise.dados.temCliqueAqui || analise.dados.temExtrato) {
+      console.error("[DETRAN] Procurando link para EMITIR EXTRATO COMPLETO...");
+      try {
+        const linkUrl = await page.evaluate(() => {
+          const links = document.querySelectorAll("a");
+          for (const link of links) {
+            const texto = (link.textContent || "").toLowerCase();
+            if (texto.includes("clique aqui") || texto.includes("extrato")) {
+              return link.href;
+            }
           }
+          return null;
+        });
+
+        if (linkUrl) {
+          console.error(`[DETRAN] Link encontrado: ${linkUrl}`);
+          await page.goto(linkUrl, { waitUntil: "networkidle", timeout: 60000 });
+          console.error("[DETRAN] Página 2 carregada.");
+          await page.waitForTimeout(3000);
+
+          console.error("[DETRAN] Capturando screenshot página 2...");
+          shot2 = await page.screenshot({ fullPage: true, type: "png" });
         }
-        return null;
-      });
-
-      if (linkUrl) {
-        console.error(`[DETRAN] Link encontrado: ${linkUrl}`);
-        await page.goto(linkUrl, { waitUntil: "networkidle", timeout: 60000 });
-        console.error("[DETRAN] Página 2 carregada.");
-        await page.waitForTimeout(3000);
-
-        console.error("[DETRAN] Capturando screenshot página 2...");
-        shot2 = await page.screenshot({ fullPage: true, type: "png" });
-      } else {
-        console.error("[DETRAN] Link para extrato não encontrado (pode ser Nada Consta limpo).");
+      } catch (e) {
+        console.error(`[DETRAN] Erro ao acessar página 2: ${e.message}`);
       }
-    } catch (e) {
-      console.error(`[DETRAN] Erro ao acessar página 2: ${e.message}`);
+    } else {
+      console.error("[DETRAN] Sem link de extrato (Nada Consta limpo).");
     }
 
-    // ===== 9. GERAR PDF COM SCREENSHOTS (mesma lógica do Mac) =====
+    // ===== 10. GERAR PDF COM SCREENSHOTS =====
     console.error("[DETRAN] Gerando PDF com screenshots...");
     const pdf = await PDFDocument.create();
 
@@ -311,7 +445,19 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.error(`[DETRAN] PDF gerado! (${pdfBuffer.length} bytes)`);
     console.error("[DETRAN] ========== SUCESSO ==========");
 
-    return pdfBuffer;
+    // RETORNA PDF + ANÁLISE (não só o PDF)
+    return {
+      pdfBuffer,
+      analise: {
+        temProblemas: analise.temProblemas,
+        status: analise.status,
+        motivo: analise.motivo,
+        nome: analise.nome,
+        numeroCertidao: analise.numeroCertidao,
+        cpfCertidao: analise.cpfCertidao,
+        dados: analise.dados,
+      },
+    };
 
   } catch (error) {
     console.error(`[DETRAN] ERRO: ${error.message}`);

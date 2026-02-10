@@ -11,14 +11,11 @@ import vision from "@google-cloud/vision";
 import OCRExtractor from "../ocrExtractor.mjs";
 import { get2CaptchaBalance } from "../services/twocaptcha.js";
 import { emitirCertidaoPDF } from "../services/certidao_v3.js";
-import { extractCertidaoTextFromBuffer } from "../certidaoParser.js";
-import { classificarCertidao } from "../certidaoClassifier.js";
 import PontuacaoAutomation from "../pontuacaoAutomation.mjs";
 
 // Sistema de Leads
 import {
   registrarLead,
-  extrairDadosDaCertidao,
   buscarLead,
   listarLeads,
   estatisticasLeads,
@@ -153,7 +150,7 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
         cnh,
         nome,
         origem,
-        status: "DESCONHECIDO", // Ainda não consultou a certidão
+        status: "DESCONHECIDO",
       });
     }
 
@@ -234,7 +231,7 @@ router.post("/consultar-certidao", async (req, res) => {
     const { cpf, cnh, origem } = req.body || {};
     if (!cpf || !cnh) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
 
-    // REGISTRAR LEAD (início da consulta - dados manuais)
+    // REGISTRAR LEAD (início da consulta)
     registrarLead({
       cpf,
       cnh,
@@ -243,27 +240,23 @@ router.post("/consultar-certidao", async (req, res) => {
     });
 
     // Chama a automação do Playwright
-    const pdfBuffer = await emitirCertidaoPDF(cpf, cnh);
+    // AGORA RETORNA { pdfBuffer, analise } em vez de só pdfBuffer
+    const resultado = await emitirCertidaoPDF(cpf, cnh);
+    const { pdfBuffer, analise } = resultado;
 
-    // Analisa o texto do PDF
-    const { normalizedText, rawText } = await extractCertidaoTextFromBuffer(pdfBuffer);
-    const analysis = classificarCertidao(normalizedText);
-
-    // EXTRAIR DADOS PESSOAIS DA CERTIDÃO
-    const dadosCertidao = extrairDadosDaCertidao(normalizedText);
-
-    // ATUALIZAR LEAD com dados da certidão
+    // ATUALIZAR LEAD com dados da certidão (extraídos do HTML, não do PDF)
     registrarLead({
       cpf,
       cnh,
-      nome: dadosCertidao.nome || null,
+      nome: analise.nome || null,
       origem: origem || "manual",
-      status: analysis.status,
-      motivo: analysis.motivo,
+      status: analise.status,
+      motivo: analise.motivo,
       extras: {
-        numeroCertidao: dadosCertidao.numeroCertidao || null,
+        numeroCertidao: analise.numeroCertidao || null,
         dataConsulta: new Date().toISOString(),
-        temProblemas: analysis.status === "RESTRICAO",
+        temProblemas: analise.temProblemas,
+        dados: analise.dados || {},
       },
     });
 
@@ -274,11 +267,11 @@ router.post("/consultar-certidao", async (req, res) => {
     return res.json({
       ok: true,
       caseId,
-      temProblemas: analysis.status === "RESTRICAO",
-      motivo: analysis.motivo,
-      status: analysis.status,
-      nome: dadosCertidao.nome || null,
-      numeroCertidao: dadosCertidao.numeroCertidao || null,
+      temProblemas: analise.temProblemas,
+      motivo: analise.motivo,
+      status: analise.status,
+      nome: analise.nome || null,
+      numeroCertidao: analise.numeroCertidao || null,
     });
 
   } catch (err) {
