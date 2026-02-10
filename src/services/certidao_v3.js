@@ -15,8 +15,8 @@ export async function emitirCertidaoPDF(cpf, cnh) {
   const cpfFormatted = cpf.replace(/\D/g, "");
   const cnhFormatted = cnh.replace(/\D/g, "");
 
-  if (cpfFormatted.length !== 11 || cnhFormatted.length !== 11) {
-    throw new Error("CPF e CNH devem ter 11 dígitos");
+  if (cpfFormatted.length !== 11 || cnhFormatted.length < 9) {
+    throw new Error("Dados inválidos (CPF deve ter 11 dígitos)");
   }
 
   console.error("[DETRAN] CPF: " + cpfFormatted + " | CNH: " + cnhFormatted);
@@ -34,217 +34,170 @@ export async function emitirCertidaoPDF(cpf, cnh) {
   try {
     // Iniciar Chromium
     console.error("[DETRAN] Iniciando Chromium...");
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+    });
     console.error("[DETRAN] Chromium iniciado ✓");
 
-    // Criar contexto e página
+    // Criar contexto e página (CORRIGIDO: newContext em vez de createContext)
     console.error("[DETRAN] Criando contexto do navegador...");
-    const context = await browser.createContext();
+    const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
     page = await context.newPage();
     console.error("[DETRAN] Página criada ✓");
 
     // Acessar página do DETRAN
     console.error("[DETRAN] Abrindo página do DETRAN...");
-    await page.goto(DETRAN_URL, { waitUntil: "networkidle", timeout: 60000 });
+    await page.goto(DETRAN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
     console.error("[DETRAN] Página carregada ✓");
 
-    // Aguardar carregamento completo
-    console.error("[DETRAN] Aguardando carregamento completo da página...");
-    await page.waitForLoadState("networkidle", { timeout: 60000 });
-    console.error("[DETRAN] Página pronta ✓");
-
-    // Scroll para o formulário
-    console.error("[DETRAN] Scrollando para o formulário...");
-    await page.evaluate(() => {
-      const form = document.querySelector("form");
-      if (form) form.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-    await page.waitForTimeout(2000);
-    console.error("[DETRAN] Scroll concluído ✓");
-
     // Aguardar campo CPF estar visível
-    console.error("[DETRAN] Aguardando campo CPF (CertidaoCpf) estar visível...");
-    await page.waitForSelector("#CertidaoCpf", { timeout: 60000 });
-    console.error("[DETRAN] Campo CPF encontrado ✓");
-
-    // Aguardar campo CNH estar visível
-    console.error("[DETRAN] Aguardando campo CNH (CertidaoCnh) estar visível...");
-    await page.waitForSelector("#CertidaoCnh", { timeout: 60000 });
-    console.error("[DETRAN] Campo CNH encontrado ✓");
-
-    // Aguardar que os campos estejam realmente visíveis e habilitados
-    console.error("[DETRAN] Aguardando campos estarem habilitados...");
-    await page.waitForFunction(
-      () => {
-        const cpfField = document.querySelector("#CertidaoCpf");
-        const cnhField = document.querySelector("#CertidaoCnh");
-        return (
-          cpfField &&
-          cnhField &&
-          !cpfField.disabled &&
-          !cnhField.disabled &&
-          cpfField.offsetParent !== null &&
-          cnhField.offsetParent !== null
-        );
-      },
-      { timeout: 60000 }
-    );
-    console.error("[DETRAN] Campos habilitados ✓");
+    console.error("[DETRAN] Aguardando campos...");
+    await page.waitForSelector("#CertidaoCpf", { state: 'visible', timeout: 60000 });
+    await page.waitForSelector("#CertidaoCnh", { state: 'visible', timeout: 60000 });
+    console.error("[DETRAN] Campos encontrados ✓");
 
     // Preencher CPF
     console.error("[DETRAN] Preenchendo CPF...");
     await page.fill("#CertidaoCpf", cpfFormatted);
-    await page.waitForTimeout(1000);
-    console.error("[DETRAN] CPF preenchido ✓");
+    await page.waitForTimeout(500);
 
     // Preencher CNH
     console.error("[DETRAN] Preenchendo CNH...");
     await page.fill("#CertidaoCnh", cnhFormatted);
-    await page.waitForTimeout(1000);
-    console.error("[DETRAN] CNH preenchida ✓");
+    await page.waitForTimeout(500);
 
     // Verificar reCAPTCHA
-    console.error("[DETRAN] Procurando reCAPTCHA...");
-    const recaptchaPresent = await page.locator("#recaptcha-anchor").isVisible().catch(() => false);
+    console.error("[DETRAN] Verificando reCAPTCHA...");
+    // Tenta encontrar o iframe do recaptcha para pegar a sitekey
+    const recaptchaFrame = await page.$('iframe[src*="recaptcha/api2/anchor"]');
     
-    if (recaptchaPresent) {
+    if (recaptchaFrame) {
       console.error("[DETRAN] reCAPTCHA encontrado, resolvendo...");
       
-      // Obter token do reCAPTCHA
-      console.error("[DETRAN] Enviando para 2Captcha...");
-      const sitekey = await page.evaluate(() => {
-        const iframe = document.querySelector('iframe[src*="recaptcha"]');
-        if (iframe) {
-          const src = iframe.getAttribute("src");
-          const match = src.match(/k=([^&]+)/);
-          return match ? match[1] : null;
-        }
-        return null;
-      });
+      const src = await recaptchaFrame.getAttribute("src");
+      const urlParams = new URLSearchParams(src.split("?")[1]);
+      const sitekey = urlParams.get("k");
 
-      if (!sitekey) {
-        throw new Error("Não consegui extrair sitekey do reCAPTCHA");
-      }
+      if (!sitekey) throw new Error("Não consegui extrair sitekey do reCAPTCHA");
 
-      const captchaResponse = await fetch("http://2captcha.com/api/captcha", {
+      // Envia para o 2Captcha
+      const captchaResponse = await fetch("http://2captcha.com/in.php", {
         method: "POST",
         body: new URLSearchParams({
           method: "userrecaptcha",
           googlekey: sitekey,
           pageurl: DETRAN_URL,
-          apikey: twocaptchaKey,
+          key: twocaptchaKey,
+          json: 1
         }),
       });
+      
+      const captchaData = await captchaResponse.json();
+      if (captchaData.status !== 1) throw new Error("Erro ao enviar para 2Captcha: " + captchaData.request);
+      
+      const captchaId = captchaData.request;
+      console.error(`[DETRAN] Captcha enviado (ID: ${captchaId}). Aguardando resposta...`);
 
-      const captchaText = await captchaResponse.text();
-      const captchaId = captchaText.split("|")[1];
-
-      if (!captchaId) {
-        throw new Error("Erro ao enviar para 2Captcha: " + captchaText);
-      }
-
-      console.error("[DETRAN] Aguardando resposta do 2Captcha...");
       let token = null;
-      for (let i = 0; i < 30; i++) {
-        await page.waitForTimeout(2000);
+      for (let i = 0; i < 40; i++) { // Tenta por ~2 minutos
+        await page.waitForTimeout(3000);
         const resultResponse = await fetch(
-          `http://2captcha.com/api/res?key=${twocaptchaKey}&action=get&captchaid=${captchaId}&json=1`
+          `http://2captcha.com/res.php?key=${twocaptchaKey}&action=get&id=${captchaId}&json=1`
         );
         const result = await resultResponse.json();
 
-        if (result.status === 0 && result.request) {
+        if (result.status === 1) {
           token = result.request;
           break;
         }
+        if (result.request !== "CAPCHA_NOT_READY") {
+            throw new Error("Erro no 2Captcha: " + result.request);
+        }
       }
 
-      if (!token) {
-        throw new Error("Não consegui resolver o reCAPTCHA");
-      }
+      if (!token) throw new Error("Timeout ao resolver o reCAPTCHA");
 
-      console.error("[DETRAN] Token reCAPTCHA obtido ✓");
+      console.error("[DETRAN] Token obtido! Injetando...");
 
-      // Injetar token no reCAPTCHA
-      console.error("[DETRAN] Injetando token no reCAPTCHA...");
+      // Injetar token na página (método universal)
       await page.evaluate((token) => {
-        window.grecaptcha.callback = function () {
-          document.getElementById("g-recaptcha-response").innerHTML = token;
-          if (window.___grecaptcha_cfg) {
-            Object.entries(window.___grecaptcha_cfg.clients).forEach(([key, client]) => {
-              if (client.callback) {
-                client.callback(token);
-              }
-            });
-          }
-        };
-        document.getElementById("g-recaptcha-response").innerHTML = token;
+        const el = document.querySelector('[name="g-recaptcha-response"]');
+        if(el) { 
+            el.innerHTML = token;
+            el.value = token;
+        }
+        // Tenta chamar o callback se existir (comum em detrans)
+        if(window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+             Object.values(window.___grecaptcha_cfg.clients).forEach(client => {
+                 Object.values(client).forEach(obj => {
+                     if(obj && obj.callback) obj.callback(token);
+                 });
+             });
+        }
       }, token);
 
       await page.waitForTimeout(1000);
-      console.error("[DETRAN] Token injetado ✓");
     } else {
-      console.error("[DETRAN] reCAPTCHA não encontrado (pode estar desabilitado)");
+      console.error("[DETRAN] reCAPTCHA não detectado visivelmente. Tentando seguir...");
     }
 
-    // Procurar e clicar no botão CONSULTAR
-    console.error("[DETRAN] Procurando botão CONSULTAR...");
-    const submitBtn = await page.locator("#btPesquisar").isVisible().catch(() => false);
+    // Clicar no botão CONSULTAR
+    console.error("[DETRAN] Clicando em Consultar...");
+    // Tenta diferentes seletores para garantir
+    const btnSelector = "#btPesquisar";
+    await page.waitForSelector(btnSelector, { state: 'attached' });
     
-    if (!submitBtn) {
-      throw new Error("Botão CONSULTAR não encontrado");
+    // Força clique via JS para evitar problemas de overlay
+    await page.evaluate((sel) => {
+        document.querySelector(sel).click();
+    }, btnSelector);
+
+    // Aguardar resultado (PDF ou Mensagem de Erro)
+    console.error("[DETRAN] Aguardando resposta...");
+    
+    // Espera navegar OU aparecer mensagem de erro
+    try {
+        await Promise.race([
+            page.waitForNavigation({ waitUntil: "networkidle", timeout: 30000 }),
+            page.waitForSelector('.alert-danger, .error-message', { timeout: 15000 })
+        ]);
+    } catch(e) {
+        console.log("Navegação demorou ou não ocorreu, verificando estado atual...");
     }
 
-    console.error("[DETRAN] Botão encontrado, clicando...");
-    await page.click("#btPesquisar");
-    console.error("[DETRAN] Clique realizado ✓");
-
-    // Aguardar resultado
-    console.error("[DETRAN] Aguardando resultado da consulta...");
-    await page.waitForNavigation({ waitUntil: "networkidle", timeout: 60000 }).catch(() => {
-      // Pode não haver navegação, apenas mudança de conteúdo
+    // Verifica se deu erro na tela
+    const erroTexto = await page.evaluate(() => {
+        const el = document.querySelector('.alert-danger, font[color="red"]');
+        return el ? el.innerText : null;
     });
-    await page.waitForTimeout(3000);
-    console.error("[DETRAN] Resultado recebido ✓");
 
-    // Gerar PDF
-    console.error("[DETRAN] Gerando PDF...");
+    if (erroTexto) {
+        throw new Error("DETRAN retornou: " + erroTexto);
+    }
+
+    console.error("[DETRAN] Gerando PDF do resultado...");
     const pdfBuffer = await page.pdf({
       format: "A4",
       margin: { top: "10mm", right: "10mm", bottom: "10mm", left: "10mm" },
     });
     console.error("[DETRAN] ✅ PDF gerado com sucesso!");
 
-    // Salvar screenshot para debug
-    const timestamp = Date.now();
-    const screenshotPath = `/tmp/detran_${timestamp}_success.png`;
-    await page.screenshot({ path: screenshotPath });
-    console.error(`[DETRAN] Screenshot salvo em ${screenshotPath}`);
-
-    console.error("[DETRAN] ✅ Certidão emitida com sucesso!");
-
     return pdfBuffer;
+
   } catch (error) {
-    console.error(`[DETRAN] ❌ Erro: ${error.message}`);
-
-    // Salvar screenshot de erro
-    if (page) {
-      const timestamp = Date.now();
-      const screenshotPath = `/tmp/detran_${timestamp}_error.png`;
-      await page.screenshot({ path: screenshotPath }).catch(() => {});
-      console.error(`[DETRAN] Screenshot de erro salvo em ${screenshotPath}`);
-
-      // Salvar HTML para análise
-      const htmlPath = `/tmp/detran_${timestamp}_error.html`;
-      const html = await page.content().catch(() => "");
-      if (html) fs.writeFileSync(htmlPath, html);
-      console.error(`[DETRAN] HTML salvo em ${htmlPath}`);
+    console.error(`[DETRAN] ❌ Erro Crítico: ${error.message}`);
+    // Salva print do erro se possível
+    if(page) {
+        try {
+            await page.screenshot({ path: '/tmp/detran_erro_final.png' });
+            console.error("Screenshot de erro salvo em /tmp/detran_erro_final.png");
+        } catch(e) {}
     }
-
     throw error;
   } finally {
-    // Fechar navegador
-    console.error("[DETRAN] Fechando navegador...");
     if (browser) await browser.close();
-    console.error("[DETRAN] Navegador fechado ✓");
   }
 }
