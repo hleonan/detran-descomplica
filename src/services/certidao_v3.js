@@ -1,27 +1,43 @@
 // src/services/certidao_v3.js
 // Automação para emitir Certidão de Nada Consta no DETRAN-RJ
-// Usa Playwright + 2Captcha para resolver reCAPTCHA v2
+// Baseado no código funcional do Mac (server.mjs) - adaptado para Playwright
 //
-// DESCOBERTA CHAVE: O formulário de consulta está dentro de um IFRAME!
-// A página principal (www.detran.rj.gov.br) carrega o formulário via iframe de:
-//   https://www2.detran.rj.gov.br/portal/multas/certidao
+// ESTRATÉGIA: Acessar DIRETAMENTE a URL do iframe (www2.detran.rj.gov.br)
+// em vez de navegar pela página principal (www.detran.rj.gov.br).
+// Isso é exatamente o que o código do Mac fazia com Puppeteer e funcionava.
 //
-// Seletores dentro do iframe:
-//   #CertidaoCpf, #CertidaoTipo (select: PGU/CNH), #CertidaoCnh, #btPesquisar
-//
+// Seletores: #CertidaoCpf, #CertidaoTipo (value '2' = CNH), #CertidaoCnh, #btPesquisar
 // Sitekey reCAPTCHA: 6LfP47IUAAAAAIwbI5NOKHyvT9Pda17dl0nXl4xv
 
 import { chromium } from "playwright";
+import { PDFDocument } from "pdf-lib";
 
-// URL direta do iframe que contém o formulário
-const IFRAME_URL = "https://www2.detran.rj.gov.br/portal/multas/certidao";
-// URL da página principal (para Referer)
-const PAGE_URL = "https://www.detran.rj.gov.br/infracoes/principais-servicos-infracoes/nada-consta.html";
-// Sitekey conhecida do reCAPTCHA
+// URL direta do formulário (mesma que o Mac usava)
+const CERTIDAO_URL = "https://www2.detran.rj.gov.br/portal/multas/certidao";
 const RECAPTCHA_SITEKEY = "6LfP47IUAAAAAIwbI5NOKHyvT9Pda17dl0nXl4xv";
 
+/**
+ * Preenche um input simulando comportamento humano
+ * (Baseado na função fillInputHuman do server.mjs original)
+ */
+async function fillInputHuman(page, selector, value) {
+  await page.waitForSelector(selector, { state: "visible", timeout: 15000 });
+  await page.click(selector, { clickCount: 3 }); // Seleciona tudo
+  await page.keyboard.press("Backspace");          // Limpa
+  await page.type(selector, String(value), { delay: 80 + Math.random() * 40 });
+  // Disparar eventos como o código original fazia
+  await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (el) {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("blur", { bubbles: true }));
+    }
+  }, selector);
+}
+
 export async function emitirCertidaoPDF(cpf, cnh) {
-  console.error("[DETRAN] Iniciando fluxo de emissão...");
+  console.error("[DETRAN] ========== INICIANDO ==========");
 
   if (!cpf || !cnh) throw new Error("CPF e CNH são obrigatórios");
 
@@ -31,35 +47,68 @@ export async function emitirCertidaoPDF(cpf, cnh) {
   const twocaptchaKey = process.env.TWOCAPTCHA_API_KEY;
   if (!twocaptchaKey) throw new Error("TWOCAPTCHA_API_KEY não configurada");
 
+  // Verificar saldo 2Captcha antes de começar
+  try {
+    const balResp = await fetch(
+      `https://2captcha.com/res.php?key=${twocaptchaKey}&action=getbalance&json=1`
+    );
+    const balData = await balResp.json();
+    if (balData.status === 1) {
+      const balance = Number(balData.request);
+      console.error(`[DETRAN] Saldo 2Captcha: $${balance}`);
+      if (balance < 0.01) throw new Error(`Saldo 2Captcha insuficiente: $${balance}`);
+    }
+  } catch (e) {
+    if (e.message.includes("Saldo")) throw e;
+    console.error(`[DETRAN] Aviso: não foi possível verificar saldo: ${e.message}`);
+  }
+
   let browser;
   let page;
 
   try {
     // ===== 1. INICIAR NAVEGADOR =====
-    console.error("[DETRAN] Iniciando navegador...");
+    console.error("[DETRAN] Iniciando navegador Chromium...");
     browser = await chromium.launch({
       headless: true,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--window-size=1366,768",
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--single-process",
+        "--disable-web-security",
+        "--disable-extensions",
+        "--disable-sync",
+        "--disable-default-apps",
+        "--disable-plugins",
+        "--disable-breakpad",
+        "--disable-client-side-phishing-detection",
+        "--disable-hang-monitor",
+        "--disable-popup-blocking",
+        "--disable-prompt-on-repost",
+        "--disable-renderer-backgrounding",
+        "--metrics-recording-only",
+        "--mute-audio",
+        "--no-default-browser-check",
+        "--no-first-run",
+        "--password-store=basic",
+        "--use-mock-keychain",
       ],
     });
 
     const context = await browser.newContext({
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      viewport: { width: 1366, height: 768 },
+      viewport: { width: 1920, height: 1080 },
       locale: "pt-BR",
       timezoneId: "America/Sao_Paulo",
       ignoreHTTPSErrors: true,
     });
 
     page = await context.newPage();
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(60000);
 
     // Anti-bot
     await page.addInitScript(() => {
@@ -69,269 +118,199 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
     });
 
-    await page.setExtraHTTPHeaders({
-      "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-      "Referer": PAGE_URL,
-    });
+    console.error("[DETRAN] Navegador iniciado.");
 
-    // ===== 2. ESTRATÉGIA: Acessar a página principal e trabalhar com o IFRAME =====
-    // O formulário está dentro de um iframe de www2.detran.rj.gov.br
-    // Vamos acessar a página principal e depois encontrar o iframe
-
-    console.error("[DETRAN] Acessando página de Certidão de Nada Consta...");
-    await page.goto(PAGE_URL, { waitUntil: "networkidle", timeout: 60000 });
+    // ===== 2. ACESSAR DIRETAMENTE A URL DO FORMULÁRIO =====
+    // Mesma estratégia do Mac: vai direto em www2.detran.rj.gov.br
+    console.error(`[DETRAN] Acessando ${CERTIDAO_URL}...`);
+    await page.goto(CERTIDAO_URL, { waitUntil: "networkidle", timeout: 60000 });
     console.error(`[DETRAN] Página carregada. URL: ${page.url()}`);
 
-    // Espera o iframe carregar
-    await page.waitForTimeout(3000);
-
-    // Encontrar o iframe do formulário
-    console.error("[DETRAN] Procurando iframe do formulário...");
-    let formFrame = null;
-
-    // Listar todos os frames
-    const frames = page.frames();
-    console.error(`[DETRAN] Total de frames: ${frames.length}`);
-
-    for (const frame of frames) {
-      const frameUrl = frame.url();
-      if (frameUrl.includes("www2.detran.rj.gov.br") || frameUrl.includes("portal/multas")) {
-        formFrame = frame;
-        console.error(`[DETRAN] Iframe do formulário encontrado: ${frameUrl}`);
-        break;
-      }
-    }
-
-    // Se não encontrou o iframe, tenta acessar diretamente
-    if (!formFrame) {
-      console.error("[DETRAN] Iframe não encontrado na página principal. Tentando acesso direto...");
-      await page.goto(IFRAME_URL, {
-        waitUntil: "networkidle",
-        timeout: 60000,
-        referer: PAGE_URL,
-      });
-      formFrame = page.mainFrame();
-      console.error(`[DETRAN] Acesso direto. URL: ${page.url()}`);
-    }
-
-    // ===== 3. PREENCHER FORMULÁRIO (dentro do iframe) =====
-    console.error("[DETRAN] Aguardando campo CPF no iframe...");
-    await formFrame.waitForSelector("#CertidaoCpf", { state: "visible", timeout: 30000 });
-    console.error("[DETRAN] Campo CPF encontrado!");
-
-    // Selecionar tipo CNH
-    const tipoSelect = await formFrame.$("#CertidaoTipo");
-    if (tipoSelect) {
-      console.error("[DETRAN] Selecionando tipo CNH...");
-      await formFrame.selectOption("#CertidaoTipo", "CNH");
-      await formFrame.waitForTimeout(500);
-    }
-
-    // Preencher CPF
+    // ===== 3. PREENCHER FORMULÁRIO =====
     console.error("[DETRAN] Preenchendo CPF...");
-    await formFrame.click("#CertidaoCpf");
-    await formFrame.waitForTimeout(200);
-    await formFrame.type("#CertidaoCpf", cpfDigits, { delay: 80 + Math.random() * 60 });
-    await formFrame.waitForTimeout(300);
+    await fillInputHuman(page, "#CertidaoCpf", cpfDigits);
 
-    // Preencher CNH
+    console.error("[DETRAN] Selecionando tipo CNH...");
+    await page.selectOption("#CertidaoTipo", "2"); // '2' = CNH (mesmo valor do Mac)
+    await page.waitForTimeout(600);
+
     console.error("[DETRAN] Preenchendo CNH...");
-    await formFrame.click("#CertidaoCnh");
-    await formFrame.waitForTimeout(200);
-    await formFrame.type("#CertidaoCnh", cnhDigits, { delay: 80 + Math.random() * 60 });
+    await fillInputHuman(page, "#CertidaoCnh", cnhDigits);
+
     console.error("[DETRAN] Dados preenchidos.");
 
     // ===== 4. RESOLVER CAPTCHA =====
     console.error("[DETRAN] Resolvendo reCAPTCHA via 2Captcha...");
 
-    // Extrair sitekey do iframe do reCAPTCHA (ou usar a conhecida)
-    let sitekey = RECAPTCHA_SITEKEY;
+    const captchaPageUrl = page.url() || CERTIDAO_URL;
+    console.error(`[DETRAN] Sitekey: ${RECAPTCHA_SITEKEY}`);
+    console.error(`[DETRAN] Page URL: ${captchaPageUrl}`);
 
-    // Tentar extrair do iframe caso tenha mudado
-    try {
-      const recaptchaFrame = frames.find((f) => f.url().includes("recaptcha/api2/anchor"));
-      if (recaptchaFrame) {
-        const src = recaptchaFrame.url();
-        const urlParams = new URLSearchParams(src.split("?")[1]);
-        const extractedKey = urlParams.get("k");
-        if (extractedKey) {
-          sitekey = extractedKey;
-          console.error(`[DETRAN] Sitekey extraída: ${sitekey}`);
-        }
-      }
-    } catch (e) {
-      console.error("[DETRAN] Usando sitekey padrão.");
+    // Enviar para 2Captcha (mesma lógica do Mac)
+    const submitUrl =
+      `https://2captcha.com/in.php?key=${twocaptchaKey}&method=userrecaptcha` +
+      `&googlekey=${RECAPTCHA_SITEKEY}&pageurl=${encodeURIComponent(captchaPageUrl)}&json=1`;
+
+    const submitResp = await fetch(submitUrl);
+    const submitText = await submitResp.text();
+    const submitData = JSON.parse(submitText);
+
+    if (submitData.status !== 1) {
+      throw new Error("Erro 2Captcha (envio): " + submitData.request);
     }
 
-    // A URL que o reCAPTCHA protege é a do iframe (www2.detran.rj.gov.br)
-    const captchaPageUrl = formFrame.url() || IFRAME_URL;
-    console.error(`[DETRAN] Sitekey: ${sitekey}`);
-    console.error(`[DETRAN] Captcha page URL: ${captchaPageUrl}`);
-
-    // Enviar para 2Captcha
-    const inUrl = `http://2captcha.com/in.php?key=${twocaptchaKey}&method=userrecaptcha&googlekey=${sitekey}&pageurl=${encodeURIComponent(captchaPageUrl)}&json=1`;
-    const inResp = await fetch(inUrl);
-    const inData = await inResp.json();
-    if (inData.status !== 1) throw new Error("Erro 2Captcha (in): " + inData.request);
-
-    const captchaId = inData.request;
+    const captchaId = submitData.request;
     console.error(`[DETRAN] Captcha enviado. ID: ${captchaId}. Aguardando resolução...`);
 
-    // Polling
+    // Polling (mesma lógica do Mac: 24 tentativas x 5s = 2 min)
     let token = null;
-    for (let i = 0; i < 50; i++) {
-      await page.waitForTimeout(3000);
-      try {
-        const resResp = await fetch(
-          `http://2captcha.com/res.php?key=${twocaptchaKey}&action=get&id=${captchaId}&json=1`
-        );
-        const resData = await resResp.json();
-        if (resData.status === 1) {
-          token = resData.request;
-          break;
-        }
-        if (resData.request !== "CAPCHA_NOT_READY") {
-          throw new Error("Erro 2Captcha (res): " + resData.request);
-        }
-        if (i % 5 === 0) {
-          console.error(`[DETRAN] Aguardando captcha... (${i + 1}/50)`);
-        }
-      } catch (fetchErr) {
-        if (fetchErr.message.includes("2Captcha")) throw fetchErr;
-        console.error(`[DETRAN] Erro polling: ${fetchErr.message}`);
+    for (let i = 0; i < 24; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+
+      const resResp = await fetch(
+        `https://2captcha.com/res.php?key=${twocaptchaKey}&action=get&id=${captchaId}&json=1`
+      );
+      const resText = await resResp.text();
+      const resData = JSON.parse(resText);
+
+      if (resData.status === 1) {
+        token = resData.request;
+        console.error("[DETRAN] Captcha resolvido!");
+        break;
+      }
+
+      if (resData.request !== "CAPCHA_NOT_READY") {
+        throw new Error("Erro 2Captcha (resultado): " + resData.request);
+      }
+
+      if (i % 4 === 0) {
+        console.error(`[DETRAN] Aguardando captcha... (${i + 1}/24)`);
       }
     }
 
-    if (!token) throw new Error("Timeout na resolução do Captcha.");
-    console.error("[DETRAN] Token obtido! Injetando no iframe...");
+    if (!token) throw new Error("Timeout na resolução do Captcha (2 minutos).");
 
-    // Injetar token DENTRO DO IFRAME do formulário
-    await formFrame.evaluate((t) => {
-      // Preenche o campo g-recaptcha-response
-      const responseEl = document.getElementById("g-recaptcha-response");
-      if (responseEl) {
-        responseEl.innerHTML = t;
-        responseEl.value = t;
-        responseEl.style.display = "block";
+    // ===== 5. INJETAR TOKEN (mesma lógica do Mac) =====
+    console.error("[DETRAN] Injetando token reCAPTCHA...");
+    await page.evaluate((t) => {
+      // Método 1: textarea g-recaptcha-response (como o Mac fazia)
+      let textarea = document.querySelector('textarea[name="g-recaptcha-response"]');
+      if (!textarea) {
+        textarea = document.getElementById("g-recaptcha-response");
       }
+      if (!textarea) {
+        // Criar se não existir (como o Mac fazia)
+        textarea = document.createElement("textarea");
+        textarea.name = "g-recaptcha-response";
+        textarea.id = "g-recaptcha-response";
+        textarea.style.display = "none";
+        document.body.appendChild(textarea);
+      }
+      textarea.value = t;
+      textarea.innerHTML = t;
 
-      // Tenta chamar o callback do reCAPTCHA
+      // Método 2: recaptcha-token
+      const tokenEl = document.getElementById("recaptcha-token");
+      if (tokenEl) tokenEl.value = t;
+
+      // Método 3: Tentar chamar callback do reCAPTCHA
       try {
         if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
-          const findCallback = (obj, depth = 0) => {
-            if (!obj || typeof obj !== "object" || depth > 10) return null;
+          const findCb = (obj, depth = 0) => {
+            if (!obj || typeof obj !== "object" || depth > 8) return null;
             for (const key of Object.keys(obj)) {
               const val = obj[key];
               if (typeof val === "function" && key === "callback") return val;
               if (typeof val === "object" && val !== null) {
                 if (val.callback && typeof val.callback === "function") return val.callback;
-                const found = findCallback(val, depth + 1);
+                const found = findCb(val, depth + 1);
                 if (found) return found;
               }
             }
             return null;
           };
           for (const client of Object.values(window.___grecaptcha_cfg.clients)) {
-            const cb = findCallback(client);
+            const cb = findCb(client);
             if (cb) {
               cb(t);
-              console.log("[CAPTCHA] Callback executado!");
               break;
             }
           }
         }
       } catch (e) {
-        console.log("[CAPTCHA] Callback error:", e);
+        // Ignora erro de callback
       }
     }, token);
 
     await page.waitForTimeout(1000);
 
-    // ===== 5. SUBMETER FORMULÁRIO =====
+    // ===== 6. SUBMETER FORMULÁRIO =====
     console.error("[DETRAN] Clicando em CONSULTAR...");
+    await page.click("#btPesquisar");
 
-    // Clicar no botão dentro do iframe
-    await formFrame.evaluate(() => {
-      const btn = document.getElementById("btPesquisar");
-      if (btn) btn.click();
-    });
+    console.error("[DETRAN] Aguardando resposta...");
+    await page.waitForTimeout(8000);
 
-    // Esperar resultado
-    console.error("[DETRAN] Aguardando resultado...");
+    // ===== 7. CAPTURAR SCREENSHOT PÁGINA 1 =====
+    console.error("[DETRAN] Capturando screenshot página 1...");
+    const shot1 = await page.screenshot({ fullPage: true, type: "png" });
 
-    // Esperar por navegação ou mudança no iframe
-    await page.waitForTimeout(5000);
+    // ===== 8. PROCURAR LINK PARA EXTRATO COMPLETO (como o Mac fazia) =====
+    console.error("[DETRAN] Procurando link para EMITIR EXTRATO COMPLETO...");
+    let shot2 = null;
 
-    // Verificar se o iframe navegou ou se apareceu resultado
     try {
-      await formFrame.waitForLoadState("networkidle", { timeout: 30000 });
-    } catch (e) {
-      console.error("[DETRAN] Timeout no networkidle do iframe (pode ser normal).");
-    }
-
-    await page.waitForTimeout(3000);
-
-    console.error(`[DETRAN] URL do iframe após consulta: ${formFrame.url()}`);
-
-    // Verificar erro dentro do iframe
-    const erroNaTela = await formFrame.evaluate(() => {
-      const seletores = [
-        ".alert-danger",
-        "font[color='red']",
-        ".error-message",
-        ".mensagem-erro",
-        ".flash-message",
-        ".error",
-      ];
-      for (const sel of seletores) {
-        const el = document.querySelector(sel);
-        if (el && el.innerText.trim()) return el.innerText.trim();
-      }
-      return null;
-    }).catch(() => null);
-
-    if (erroNaTela) {
-      console.error(`[DETRAN] Erro na tela: ${erroNaTela}`);
-      throw new Error("DETRAN respondeu: " + erroNaTela);
-    }
-
-    // ===== 6. VERIFICAR EXTRATO DETALHADO =====
-    console.error("[DETRAN] Verificando extrato detalhado...");
-    const temExtrato = await formFrame.evaluate(() => {
-      const elements = Array.from(
-        document.querySelectorAll('a, button, input[type="button"], input[type="submit"]')
-      );
-      const extrato = elements.find((el) => {
-        const texto = (el.innerText || el.value || "").toLowerCase();
-        return (
-          texto.includes("extrato") ||
-          texto.includes("detalhado") ||
-          (texto.includes("emitir") && !texto.includes("consultar"))
-        );
+      const linkUrl = await page.evaluate(() => {
+        const links = document.querySelectorAll("a");
+        for (const link of links) {
+          const texto = (link.textContent || "").toLowerCase();
+          if (texto.includes("clique aqui") || texto.includes("extrato")) {
+            return link.href;
+          }
+        }
+        return null;
       });
-      if (extrato) {
-        extrato.click();
-        return true;
-      }
-      return false;
-    }).catch(() => false);
 
-    if (temExtrato) {
-      console.error("[DETRAN] Extrato detalhado clicado.");
-      await page.waitForTimeout(5000);
+      if (linkUrl) {
+        console.error(`[DETRAN] Link encontrado: ${linkUrl}`);
+        await page.goto(linkUrl, { waitUntil: "networkidle", timeout: 60000 });
+        console.error("[DETRAN] Página 2 carregada.");
+        await page.waitForTimeout(3000);
+
+        console.error("[DETRAN] Capturando screenshot página 2...");
+        shot2 = await page.screenshot({ fullPage: true, type: "png" });
+      } else {
+        console.error("[DETRAN] Link para extrato não encontrado (pode ser Nada Consta limpo).");
+      }
+    } catch (e) {
+      console.error(`[DETRAN] Erro ao acessar página 2: ${e.message}`);
     }
 
-    // ===== 7. GERAR PDF =====
-    console.error("[DETRAN] Gerando PDF...");
+    // ===== 9. GERAR PDF COM SCREENSHOTS (mesma lógica do Mac) =====
+    console.error("[DETRAN] Gerando PDF com screenshots...");
+    const pdf = await PDFDocument.create();
 
-    // Para gerar o PDF, precisamos capturar a página inteira (incluindo iframe)
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" },
-    });
+    // Página 1
+    const img1 = await pdf.embedPng(shot1);
+    const p1 = pdf.addPage([img1.width, img1.height]);
+    p1.drawImage(img1, { x: 0, y: 0, width: img1.width, height: img1.height });
+
+    // Página 2 (se existir)
+    if (shot2) {
+      const img2 = await pdf.embedPng(shot2);
+      const p2 = pdf.addPage([img2.width, img2.height]);
+      p2.drawImage(img2, { x: 0, y: 0, width: img2.width, height: img2.height });
+      console.error("[DETRAN] PDF com 2 páginas.");
+    } else {
+      console.error("[DETRAN] PDF com 1 página.");
+    }
+
+    const pdfBytes = await pdf.save();
+    const pdfBuffer = Buffer.from(pdfBytes);
 
     console.error(`[DETRAN] PDF gerado! (${pdfBuffer.length} bytes)`);
+    console.error("[DETRAN] ========== SUCESSO ==========");
+
     return pdfBuffer;
 
   } catch (error) {
@@ -340,7 +319,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       try {
         const screenshotPath = `/tmp/erro_detran_${Date.now()}.png`;
         await page.screenshot({ path: screenshotPath, fullPage: true });
-        console.error(`[DETRAN] Screenshot: ${screenshotPath}`);
+        console.error(`[DETRAN] Screenshot de erro: ${screenshotPath}`);
       } catch (e) { /* ignora */ }
     }
     throw error;
