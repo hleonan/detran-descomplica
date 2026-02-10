@@ -41,14 +41,13 @@ jobs:
             --memory 2Gi \
             --cpu 2 \
             --timeout 300 \
-            --max-instances=5
+            --max-instances 5 \
             --set-env-vars "NODE_ENV=production,OCR_BUCKET=detran-descomplica-ocr" \
             --set-secrets "TWOCAPTCHA_API_KEY=TWOCAPTCHA_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest"
 
-
       - name: Show deployment URL
         run: |
-          echo "🚀 Deploy concluído!"
+          echo "Deploy concluido!"
           gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region ${{ env.REGION }} \
             --format 'value(status.url)'
