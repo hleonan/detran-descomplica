@@ -1,26 +1,28 @@
-# Alterado de v1.58.2 para v1.50.1 para bater com o seu package.json
-FROM mcr.microsoft.com/playwright:v1.50.1-jammy
+# Usa uma imagem Node.js limpa e estável
+FROM node:20-bookworm
 
+# Define o diretório de trabalho
 WORKDIR /app
 
-# Copia arquivos de dependência
+# Copia os arquivos de dependência
 COPY package*.json ./
 
-# Instala as dependências do projeto
+# 1. Instala as bibliotecas do Node
 RUN npm ci
 
-# GARANTIA: Força a instalação do navegador correto caso a imagem base falhe
-RUN npx playwright install chromium
+# 2. O GRANDE SEGREDO: Instala o navegador e as dependências do Linux
+# Isso garante que a versão do navegador seja EXATAMENTE a que o seu código precisa
+RUN npx playwright install --with-deps chromium
 
 # Copia o resto do código
 COPY . .
 
-# Define variáveis de ambiente
+# Variáveis de ambiente
 ENV NODE_ENV=production
 ENV PORT=8080
 
 # Expõe a porta
 EXPOSE 8080
 
-# Inicia o servidor
+# Inicia
 CMD ["npm", "start"]
