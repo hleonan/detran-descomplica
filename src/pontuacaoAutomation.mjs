@@ -7,7 +7,7 @@ import TwoCaptcha from './services/TwoCaptchaClass.js';
  */
 
 class PontuacaoAutomation {
-  constructor(apiKey2Captcha ) {
+  constructor(apiKey2Captcha) {
     this.twoCaptcha = new TwoCaptcha(apiKey2Captcha);
     this.browser = null;
   }
@@ -16,16 +16,36 @@ class PontuacaoAutomation {
     try {
       this.browser = await chromium.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--single-process'
+        ]
       });
 
-      const context = await this.browser.createBrowserContext();
+      const context = await this.browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        viewport: { width: 1366, height: 768 },
+        locale: 'pt-BR',
+        timezoneId: 'America/Sao_Paulo',
+        ignoreHTTPSErrors: true
+      });
+
       const page = await context.newPage();
+
+      // Remove indicadores de automação
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      });
 
       // Navegar para a página de consulta
       await page.goto('http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
-        waitUntil: 'networkidle'
-      } );
+        waitUntil: 'networkidle',
+        timeout: 45000
+      });
 
       // Preencher CPF
       await page.fill('input[name="cpf"]', cpf);
@@ -37,7 +57,7 @@ class PontuacaoAutomation {
       await page.selectOption('select[name="uf"]', uf);
 
       // Resolver CAPTCHA
-      console.log('Resolvendo CAPTCHA...');
+      console.log('[MULTAS] Resolvendo CAPTCHA...');
       const captchaToken = await this.resolverCaptcha(page);
       
       if (!captchaToken) {
@@ -48,7 +68,7 @@ class PontuacaoAutomation {
       await page.click('button[type="submit"]');
       
       // Aguardar resultado
-      await page.waitForNavigation({ waitUntil: 'networkidle' });
+      await page.waitForLoadState('networkidle', { timeout: 30000 });
 
       // Capturar resultado
       const resultado = await this.capturarResultado(page);
@@ -59,7 +79,7 @@ class PontuacaoAutomation {
       return resultado;
     } catch (error) {
       if (this.browser) {
-        await this.browser.close();
+        try { await this.browser.close(); } catch(e) {}
       }
       throw error;
     }
@@ -67,11 +87,9 @@ class PontuacaoAutomation {
 
   async resolverCaptcha(page) {
     try {
-      // Capturar screenshot do CAPTCHA
       const captchaElement = await page.$('iframe[src*="recaptcha"]');
       
       if (!captchaElement) {
-        // Se não houver iframe, pode ser CAPTCHA de imagem
         const imagemCaptcha = await page.$('img[alt*="captcha"]');
         if (imagemCaptcha) {
           const screenshot = await imagemCaptcha.screenshot();
@@ -82,7 +100,6 @@ class PontuacaoAutomation {
         return null;
       }
 
-      // Para reCAPTCHA, usar método diferente
       const sitekey = await page.evaluate(() => {
         const iframe = document.querySelector('iframe[src*="recaptcha"]');
         const src = iframe?.src || '';
@@ -94,19 +111,18 @@ class PontuacaoAutomation {
         throw new Error('Não foi possível extrair o sitekey do reCAPTCHA');
       }
 
-      // Usar 2Captcha para resolver reCAPTCHA
       const captchaId = await this.twoCaptcha.uploadReCaptcha(
         sitekey,
         'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
-       );
+      );
 
       const token = await this.twoCaptcha.obterResultado(captchaId);
       
-      // Injetar token no formulário
       await page.evaluate((token) => {
         const responseField = document.getElementById('g-recaptcha-response');
         if (responseField) {
           responseField.innerHTML = token;
+          responseField.value = token;
         }
       }, token);
 
@@ -119,13 +135,8 @@ class PontuacaoAutomation {
 
   async capturarResultado(page) {
     try {
-      // Aguardar a página de resultado carregar
       await page.waitForSelector('table, div[class*="resultado"]', { timeout: 10000 });
 
-      // Capturar HTML da página
-      const html = await page.content();
-
-      // Extrair dados da tabela de multas
       const multas = await page.evaluate(() => {
         const rows = document.querySelectorAll('table tbody tr');
         const dados = [];
@@ -146,7 +157,6 @@ class PontuacaoAutomation {
         return dados;
       });
 
-      // Extrair resumo (pontos totais, multas pendentes, etc)
       const resumo = await page.evaluate(() => {
         const texto = document.body.innerText;
         return {

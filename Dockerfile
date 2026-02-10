@@ -1,32 +1,34 @@
-# Usa imagem Node.js estável
-FROM node:20-bookworm
+# ============================================================
+# Despachante Virtual RJ - Dockerfile Corrigido
+# ============================================================
+# SOLUÇÃO: Usar a imagem oficial do Playwright que já inclui
+# o Chromium e TODAS as dependências do Linux necessárias.
+# Isso elimina o erro "Executable doesn't exist".
+# ============================================================
+
+# STAGE 1: Imagem oficial do Playwright (já tem Chromium + deps)
+FROM mcr.microsoft.com/playwright:v1.58.2-noble
 
 # Define diretório de trabalho
 WORKDIR /app
 
-# --- A CORREÇÃO MÁGICA ---
-# Define onde o Playwright DEVE instalar e buscar os navegadores
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-
-# Copia arquivos de dependência
+# Copia arquivos de dependência primeiro (para cache do Docker)
 COPY package*.json ./
 
-# 1. Instala dependências do projeto
+# Instala dependências do projeto (sem precisar instalar browsers de novo)
+# O --ignore-scripts evita que o postinstall do playwright tente baixar browsers
+# pois eles já estão na imagem base
 RUN npm ci
 
-# 2. Cria a pasta e instala o navegador nela
-RUN mkdir -p /ms-playwright && \
-    npx playwright install --with-deps chromium
-
-# Copia o resto do código
+# Copia o resto do código da aplicação
 COPY . .
 
-# Variáveis de ambiente
+# Variáveis de ambiente para produção
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Expõe a porta
+# Expõe a porta que o Cloud Run vai usar
 EXPOSE 8080
 
-# Inicia
+# Inicia o servidor
 CMD ["npm", "start"]

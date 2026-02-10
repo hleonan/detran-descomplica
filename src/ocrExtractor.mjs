@@ -17,17 +17,13 @@ class OCRExtractor {
   }
 
   /**
-   * Extrair texto de imagem usando Google Vision API
+   * Extrair texto de imagem usando Google Vision API (método base)
    */
-  async extrairTextoImagem(caminhoArquivo ) {
+  async extrairTextoImagem(caminhoArquivo) {
     try {
       // Ler arquivo
       const buffer = fs.readFileSync(caminhoArquivo);
       const base64 = buffer.toString('base64');
-
-      // Determinar tipo de mídia
-      const ext = path.extname(caminhoArquivo).toLowerCase();
-      const tipoMidia = this.obterTipoMidia(ext);
 
       // Chamar Google Vision API
       if (!this.apiKey) throw new Error("Chave do Google Vision não informada.");
@@ -66,10 +62,14 @@ class OCRExtractor {
       // Extrair texto completo
       const textoCompleto = data.responses[0].fullTextAnnotation?.text || '';
 
+      // Extrair dados da CNH do texto
+      const dados = this.extrairDadosDoTexto(textoCompleto);
+
       return {
         sucesso: true,
+        dados: dados,
         textoCompleto: textoCompleto,
-        anotacoes: data.responses[0].textAnnotations || []
+        confianca: this.calcularConfianca(dados.cpf, dados.cnh)
       };
     } catch (error) {
       console.error('Erro ao extrair texto:', error);
@@ -81,66 +81,56 @@ class OCRExtractor {
   }
 
   /**
-   * Extrair dados específicos da CNH
+   * Extrair dados específicos da CNH a partir do texto OCR
+   */
+  extrairDadosDoTexto(texto) {
+    if (!texto) return { cpf: null, cnh: null, nome: null };
+
+    // Extrair CPF (padrão: XXX.XXX.XXX-XX ou XXXXXXXXXXX)
+    const cpfMatch = texto.match(/(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
+    const cpf = cpfMatch ? this.normalizarCPF(cpfMatch[1]) : null;
+
+    // Extrair CNH - múltiplas estratégias
+    let cnh = null;
+    
+    // Estratégia 1: Procura "Registro" ou "CNH" seguido de números
+    const cnhMatch1 = texto.match(/(?:Registro|N[°º]?\s*Registro|CNH)[:\s]*(\d{9,12})/i);
+    if (cnhMatch1) cnh = cnhMatch1[1];
+    
+    // Estratégia 2: Procura números de 11 dígitos que não sejam CPF
+    if (!cnh) {
+      const cpfDigits = cpf ? cpf.replace(/\D/g, '') : '';
+      const allNumbers = texto.match(/\b\d{11}\b/g) || [];
+      for (const num of allNumbers) {
+        if (num !== cpfDigits) {
+          cnh = num;
+          break;
+        }
+      }
+    }
+
+    // Estratégia 3: Procura sequência de 9-12 dígitos após "Registro"
+    if (!cnh) {
+      const cnhMatch3 = texto.match(/(\d{9,12})\s*(?:CNH|Registro)/i);
+      if (cnhMatch3) cnh = cnhMatch3[1];
+    }
+
+    // Extrair nome
+    const nomeMatch = texto.match(/Nome[:\s]*([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇa-záéíóúâêîôûãõç\s]+)/i);
+    const nome = nomeMatch ? nomeMatch[1].trim() : null;
+
+    return {
+      cpf: cpf,
+      cnh: cnh,
+      nome: nome
+    };
+  }
+
+  /**
+   * Extrair dados específicos da CNH (alias para compatibilidade)
    */
   async extrairDadosCNH(caminhoArquivo) {
-    try {
-      // Extrair texto da imagem
-      const resultado = await this.extrairTextoImagem(caminhoArquivo);
-
-      if (!resultado.sucesso) {
-        return resultado;
-      }
-
-      const texto = resultado.textoCompleto;
-
-      // Extrair CPF (padrão: XXX.XXX.XXX-XX)
-      const cpfMatch = texto.match(/(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
-      const cpf = cpfMatch ? this.normalizarCPF(cpfMatch[1]) : null;
-
-      // Extrair CNH (padrão: números de 9-12 dígitos)
-      const cnhMatch = texto.match(/CNH[:\s]*(\d{9,12})/i) || 
-                       texto.match(/(?:Registro|Número)[:\s]*(\d{9,12})/i) ||
-                       texto.match(/(\d{9,12})\s*(?:CNH|Registro)/i);
-      const cnh = cnhMatch ? cnhMatch[1] : null;
-
-      // Extrair nome
-      const nomeMatch = texto.match(/Nome[:\s]*([A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚa-záéíóú\s]+)/i);
-      const nome = nomeMatch ? nomeMatch[1].trim() : null;
-
-      // Extrair data de nascimento (padrão: DD/MM/YYYY ou DD-MM-YYYY)
-      const dataNascimentoMatch = texto.match(/(\d{2}[/-]\d{2}[/-]\d{4})/);
-      const dataNascimento = dataNascimentoMatch ? dataNascimentoMatch[1] : null;
-
-      // Extrair categoria (A, B, C, D, E, AB, AC, AD, AE)
-      const categoriaMatch = texto.match(/Categoria[:\s]*([A-E]{1,2})/i);
-      const categoria = categoriaMatch ? categoriaMatch[1] : null;
-
-      // Extrair validade (data de vencimento)
-      const validadeMatch = texto.match(/Válida até[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})/i) ||
-                           texto.match(/Vencimento[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})/i);
-      const validade = validadeMatch ? validadeMatch[1] : null;
-
-      return {
-        sucesso: true,
-        dados: {
-          cpf: cpf,
-          cnh: cnh,
-          nome: nome,
-          dataNascimento: dataNascimento,
-          categoria: categoria,
-          validade: validade
-        },
-        textoCompleto: texto,
-        confianca: this.calcularConfianca(cpf, cnh)
-      };
-    } catch (error) {
-      console.error('Erro ao extrair dados CNH:', error);
-      return {
-        sucesso: false,
-        erro: error.message
-      };
-    }
+    return this.extrairTextoImagem(caminhoArquivo);
   }
 
   /**
@@ -152,11 +142,8 @@ class OCRExtractor {
     const numeros = cpf.replace(/\D/g, '');
 
     if (numeros.length !== 11) return false;
-
-    // Verificar se todos os dígitos são iguais
     if (/^(\d)\1{10}$/.test(numeros)) return false;
 
-    // Validar primeiro dígito verificador
     let soma = 0;
     for (let i = 0; i < 9; i++) {
       soma += parseInt(numeros[i]) * (10 - i);
@@ -166,7 +153,6 @@ class OCRExtractor {
 
     if (parseInt(numeros[9]) !== digito1) return false;
 
-    // Validar segundo dígito verificador
     soma = 0;
     for (let i = 0; i < 10; i++) {
       soma += parseInt(numeros[i]) * (11 - i);

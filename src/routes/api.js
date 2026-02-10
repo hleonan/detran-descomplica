@@ -33,8 +33,14 @@ const upload = multer({
 // =========================
 // Configurações e Utilitários
 // =========================
-const storage = new Storage();
-const visionClient = new vision.v1.ImageAnnotatorClient();
+let storage, visionClient;
+try {
+  storage = new Storage();
+  visionClient = new vision.v1.ImageAnnotatorClient();
+} catch (e) {
+  console.warn("[AVISO] Google Cloud Storage/Vision não configurado:", e.message);
+}
+
 const ocrJobStore = new Map();
 const OCR_TTL_MS = 20 * 60 * 1000;
 
@@ -67,6 +73,9 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       const bucketName = process.env.OCR_BUCKET;
       if (!bucketName) {
         return res.status(500).json({ error: "Configuração de Bucket ausente no servidor." });
+      }
+      if (!storage || !visionClient) {
+        return res.status(500).json({ error: "Google Cloud não configurado." });
       }
 
       const jobId = newJobId();
@@ -118,7 +127,7 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     // Inicializa extrator
     const ocr = new OCRExtractor(apiKey);
     
-    // CORREÇÃO 1: Nome da função corrigido para bater com o ocrExtractor.mjs
+    // Chama extrairTextoImagem que agora retorna dados.cpf e dados.cnh
     const result = await ocr.extrairTextoImagem(tmpPath); 
 
     try { fs.unlinkSync(tmpPath); } catch {} // Limpa temp
@@ -152,6 +161,8 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
 
     // Verifica bucket
     const bucketName = process.env.OCR_BUCKET;
+    if (!bucketName || !storage) return res.json({ status: "processing" });
+
     const bucket = storage.bucket(bucketName);
     const [files] = await bucket.getFiles({ prefix: job.gcsOutPrefix });
     const jsonFile = files.find(f => f.name.endsWith(".json"));
@@ -163,13 +174,13 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     const parsed = JSON.parse(buf.toString("utf8"));
     const text = parsed?.responses?.[0]?.fullTextAnnotation?.text || "";
 
-    // Extração simples via Regex
+    // Extração via Regex
     const cpfMatch = text.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
     const cnhMatch = text.match(/(?<!\d)\d{11}(?!\d)/); 
 
     job.status = "done";
     job.result = {
-      cpf: cpfMatch ? cpfMatch[0] : null,
+      cpf: cpfMatch ? cpfMatch[0].replace(/\D/g, '') : null,
       cnh: cnhMatch ? cnhMatch[0] : null
     };
 
@@ -184,13 +195,22 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
 // ROTA: Consultar Certidão (Detran)
 // =========================
 const certidaoStore = new Map();
+const CERTIDAO_TTL_MS = 30 * 60 * 1000; // 30 minutos
+
+function cleanupCertidoes() {
+  const now = Date.now();
+  for (const [id, item] of certidaoStore.entries()) {
+    if (now - item.createdAt > CERTIDAO_TTL_MS) certidaoStore.delete(id);
+  }
+}
 
 router.post("/consultar-certidao", async (req, res) => {
   try {
+    cleanupCertidoes();
     const { cpf, cnh } = req.body || {};
     if (!cpf || !cnh) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
 
-    // CORREÇÃO 2: Passando CPF e CNH separados, como o certidao_v3.js espera
+    // Chama a automação do Playwright
     const pdfBuffer = await emitirCertidaoPDF(cpf, cnh);
 
     // Analisa o texto do PDF
@@ -211,7 +231,6 @@ router.post("/consultar-certidao", async (req, res) => {
 
   } catch (err) {
     console.error("Erro na consulta:", err);
-    // Devolve o erro exato para o Frontend mostrar
     return res.status(400).json({ ok: false, error: err.message || "Erro ao consultar DETRAN." });
   }
 });
