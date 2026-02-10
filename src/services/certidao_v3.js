@@ -27,12 +27,13 @@ export async function emitirCertidaoPDF(cpf, cnh) {
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled', // O SEGREDO: Esconde que é robô
-            '--window-size=1366,768',
-            '--start-maximized'
+            '--disable-blink-features=AutomationControlled', // Esconde que é robô
+            '--window-size=1366,768', // Tamanho fixo é melhor que maximized em headless
+            '--disable-dev-shm-usage', // Evita crash de memória no Docker
+            '--disable-gpu'
         ] 
     });
-
+    
     const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         viewport: { width: 1366, height: 768 },
