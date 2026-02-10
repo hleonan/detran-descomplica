@@ -38,9 +38,10 @@ jobs:
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
             --port 8080 \
-            --memory 1Gi \
-            --cpu 1 \
+            --memory 2Gi \
+            --cpu 2 \
             --timeout 300 \
+            --max-instances 5
             --set-env-vars "NODE_ENV=production,OCR_BUCKET=detran-descomplica-ocr" \
             --set-secrets "TWOCAPTCHA_API_KEY=TWOCAPTCHA_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest"
 
