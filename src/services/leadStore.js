@@ -2,9 +2,9 @@ import fs from "fs";
 
 // ====================================================
 // CONFIGURAÇÃO DO GOOGLE SHEETS
+// URL ATUALIZADA (Versão 2 - Final 11/02/2026)
 // ====================================================
-// A URL agora está correta dentro das aspas abaixo:
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbwsDWu8AgHvGUp5UgdbL9JCOTEPUxjThba1LLKGo8KE_TyJgqVYB5xA8A8Zy1JtNJcF/exec"; 
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbzQ5n8Vi8SYLcVMMg43OzhOjAC8QnNWy0ZLHBsxgBAZYNXuNxSJ4WlB0kWpHiTxoYyq/exec"; 
 
 // Armazenamento em memória (Backup rápido)
 const leadsMap = new Map();
