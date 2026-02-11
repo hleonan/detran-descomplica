@@ -2,7 +2,6 @@ import fs from "fs";
 
 // ====================================================
 // CONFIGURAÇÃO DO GOOGLE SHEETS
-// URL ATUALIZADA (Versão 2 - Final 11/02/2026)
 // ====================================================
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbzQ5n8Vi8SYLcVMMg43OzhOjAC8QnNWy0ZLHBsxgBAZYNXuNxSJ4WlB0kWpHiTxoYyq/exec"; 
 
@@ -26,13 +25,13 @@ export async function registrarLead(dados) {
       ultimaConsulta: new Date().toISOString(),
     };
 
-    // 1. Salva na Memória RAM
+    // 1. Salva na Memória RAM (Sempre atualiza)
     leadsMap.set(lead.cpf, lead);
 
-    // 2. Salva no Arquivo Temporário (Backup local)
+    // 2. Salva no Arquivo Temporário (Sempre atualiza)
     salvarLeadsNoArquivo();
 
-    // 3. ENVIA PARA O GOOGLE SHEETS (Assíncrono - não trava o site)
+    // 3. ENVIA PARA O GOOGLE SHEETS (COM FILTRO DE "PACIÊNCIA")
     enviarParaGoogleSheets(lead).catch(err => console.error("[LEADS] Erro ao enviar para Sheet:", err));
 
     console.log(`[LEADS] Lead registrado: ${lead.cpf} (${lead.status})`);
@@ -48,10 +47,18 @@ export async function registrarLead(dados) {
  * Envia os dados para a planilha via Webhook
  */
 async function enviarParaGoogleSheets(lead) {
-  // Verificação de segurança
-  if (!SHEET_URL || SHEET_URL.includes("COLE_SUA_URL")) {
-    console.warn("[LEADS] URL do Google Sheets não configurada corretamente.");
-    return;
+  // Verificação de segurança da URL
+  if (!SHEET_URL || SHEET_URL.includes("COLE_SUA_URL")) return;
+
+  // === O FILTRO MÁGICO ===
+  // Só envia para a planilha se o status for definitivo.
+  // Ignora leads que acabaram de chegar ("DESCONHECIDO") ou estão processando.
+  const statusIgnorados = ["DESCONHECIDO", "PROCESSANDO", "AGUARDANDO"];
+  
+  if (!lead.status || statusIgnorados.includes(lead.status)) {
+      // Se quiser ver no log que ele ignorou, descomente a linha abaixo:
+      // console.log("[LEADS] Status preliminar ignorado no Sheets:", lead.status);
+      return; 
   }
 
   try {
@@ -61,13 +68,13 @@ async function enviarParaGoogleSheets(lead) {
       body: JSON.stringify({
         cpf: lead.cpf,
         cnh: lead.cnh,
-        status: lead.status,
+        status: lead.status, // Agora só vai chegar "OK", "RESTRICAO" ou "ERRO"
         motivo: lead.motivo,
         origem: lead.origem
       }),
-      redirect: "follow" // Importante para Apps Script
+      redirect: "follow"
     });
-    console.log("[LEADS] Enviado para o Google Sheets com sucesso.");
+    console.log("[LEADS] ✅ Enviado para o Google Sheets (Status Final).");
   } catch (error) {
     console.error("[LEADS] Falha na conexão com Google Sheets:", error);
   }
