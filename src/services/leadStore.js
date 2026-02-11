@@ -3,7 +3,7 @@ import fs from "fs";
 // ====================================================
 // CONFIGURAÇÃO DO GOOGLE SHEETS
 // ====================================================
-// URL CORRIGIDA (Copiada do seu comentário anterior)
+// A URL agora está correta dentro das aspas abaixo:
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbwsDWu8AgHvGUp5UgdbL9JCOTEPUxjThba1LLKGo8KE_TyJgqVYB5xA8A8Zy1JtNJcF/exec"; 
 
 // Armazenamento em memória (Backup rápido)
@@ -48,14 +48,13 @@ export async function registrarLead(dados) {
  * Envia os dados para a planilha via Webhook
  */
 async function enviarParaGoogleSheets(lead) {
-  // Verificação de segurança para não enviar se a URL estiver errada
+  // Verificação de segurança
   if (!SHEET_URL || SHEET_URL.includes("COLE_SUA_URL")) {
     console.warn("[LEADS] URL do Google Sheets não configurada corretamente.");
     return;
   }
 
   try {
-    // IMPORTANTE: O Apps Script exige redirecionamento (follow: true)
     await fetch(SHEET_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -66,7 +65,7 @@ async function enviarParaGoogleSheets(lead) {
         motivo: lead.motivo,
         origem: lead.origem
       }),
-      redirect: "follow" 
+      redirect: "follow" // Importante para Apps Script
     });
     console.log("[LEADS] Enviado para o Google Sheets com sucesso.");
   } catch (error) {
