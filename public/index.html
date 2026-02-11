@@ -908,7 +908,6 @@
     </header>
 
     <div class="container">
-        <!-- TELA 1: HOME -->
         <div id="screen1" class="screen active">
             <div class="hero-section">
                 <h1 class="hero-title">MOTORISTA, ANALISE A SITUAÇÃO DA SUA CNH</h1>
@@ -944,7 +943,6 @@
             </div>
         </div>
 
-        <!-- TELA 2: ENTRADA DE DADOS (3 MÉTODOS) -->
         <div id="screen2" class="screen">
             <button class="btn-back" onclick="goToScreen1()">← Voltar</button>
             
@@ -955,7 +953,6 @@
                 </div>
 
                 <form id="mainForm" onsubmit="handleDataEntry(event)">
-                    <!-- MÉTODO A: DIGITAÇÃO MANUAL -->
                     <div class="form-group">
                         <label for="cpf">CPF *</label>
                         <input type="text" id="cpf" placeholder="000.000.000-00" maxlength="14" required inputmode="numeric">
@@ -968,16 +965,13 @@
 
                     <div class="divider">OU ENVIE SUA CNH</div>
 
-                    <!-- MÉTODOS B e C: UPLOAD E CÂMERA -->
                     <div class="input-methods">
-                        <!-- MÉTODO B: UPLOAD DE ARQUIVO -->
                         <div class="upload-area" onclick="document.getElementById('fileUpload').click()">
                             <div class="upload-icon">📁</div>
                             <p class="upload-text">Upload de Arquivo</p>
                             <p class="upload-hint">PDF, JPG ou PNG da galeria</p>
                         </div>
 
-                        <!-- MÉTODO C: TIRAR FOTO (NOVO) -->
                         <div class="camera-area" id="cameraAreaBtn" onclick="abrirCamera()">
                             <div class="camera-icon">📸</div>
                             <p class="camera-text">Tirar Foto</p>
@@ -985,13 +979,10 @@
                         </div>
                     </div>
 
-                    <!-- Input oculto para upload de arquivo -->
                     <input type="file" id="fileUpload" style="display: none;" accept="application/pdf,image/jpeg,image/jpg,image/png">
 
-                    <!-- Input oculto para captura de câmera (fallback mobile) -->
                     <input type="file" id="cameraCapture" style="display: none;" accept="image/jpeg,image/png" capture="environment">
 
-                    <!-- Preview da foto tirada -->
                     <div id="photoPreview" class="photo-preview-container">
                         <img id="photoPreviewImg" class="photo-preview-img" alt="Foto da CNH">
                         <p class="photo-preview-text">Foto capturada! Extraindo dados...</p>
@@ -1002,7 +993,6 @@
             </div>
         </div>
 
-        <!-- TELA 3: RESULTADO -->
         <div id="screen3" class="screen">
             <button class="btn-back" onclick="goToScreen2()">← Voltar</button>
             
@@ -1011,9 +1001,9 @@
                 
                 <h2 id="result-title" class="alert-title">Atenção</h2>
                 
-                <p id="result-message" class="alert-message">
+                <div id="result-message" class="alert-message">
                     Aguarde o resultado...
-                </p>
+                </div>
 
                 <button id="btn-result-action" class="btn-primary" style="margin-bottom: 15px;">
                     Ação Principal
@@ -1025,7 +1015,6 @@
             </div>
         </div>
 
-        <!-- TELA 4: SERVIÇOS -->
         <div id="screen4" class="screen">
             <button class="btn-back" onclick="goToScreen3()">← Voltar</button>
             
@@ -1064,7 +1053,6 @@
             </div>
         </div>
 
-        <!-- TELA 6: MULTAS -->
         <div id="screen6" class="screen">
             <button class="btn-back" onclick="goToScreen4()">← Voltar</button>
             <div class="data-entry-section" style="max-width: 1200px;">
@@ -1103,7 +1091,6 @@
             </div>
         </div>
 
-        <!-- TELA 5: OUTROS SERVIÇOS -->
         <div id="screen5" class="screen">
             <button class="btn-back" onclick="goToScreen1()">← Voltar</button>
             <div class="other-services-section">
@@ -1145,7 +1132,6 @@
         </div>
     </div>
 
-    <!-- SMART LOADING OVERLAY -->
     <div id="smartLoading" class="smart-loading">
         <img src="/assets/logo.png" alt="Processando" class="loading-logo">
         <div class="loading-text">Analisando sua CNH</div>
@@ -1161,7 +1147,6 @@
         </div>
     </div>
 
-    <!-- CAMERA MODAL -->
     <div id="cameraModal" class="camera-modal">
         <video id="cameraVideo" class="camera-preview" autoplay playsinline></video>
         <canvas id="cameraCanvas" class="camera-canvas"></canvas>
@@ -1456,7 +1441,7 @@
           const data = await resp.json();
           
           // ========================================================
-          // TRATAMENTO DE ERROS (COM SUPORTE WHATSAPP)
+          // TRATAMENTO DE ERRO COM WHATSAPP (MODIFICADO)
           // ========================================================
           if (!resp.ok || !data.ok) {
             stopSmartLoading();
@@ -1467,7 +1452,6 @@
             const erroDetran = msgErro.includes("DETRAN_FAIL") || msgErro.includes("Timeout");
 
             if (erroDetran) {
-                // Configura Tela 3 para Modo Erro
                 const icon = document.getElementById("result-icon");
                 const title = document.getElementById("result-title");
                 const msg = document.getElementById("result-message");
@@ -1475,24 +1459,24 @@
                 const btnSecondary = document.getElementById("btn-result-secondary");
 
                 icon.innerText = "😓";
-                title.innerText = "Ops! O site do DETRAN está instável.";
+                title.innerText = "Ops! Não conseguimos validar automaticamente.";
                 title.style.color = "#d32f2f";
 
                 msg.innerHTML = `
                     <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 5px solid #ffc107; text-align: left;">
-                        <p style="color: #333; font-weight: bold;">Não conseguimos emitir sua certidão automaticamente.</p>
+                        <p style="color: #333; font-weight: bold;">O DETRAN não retornou a certidão.</p>
                         <p style="font-size: 0.9em; margin-top: 5px;">
-                            Isso acontece quando o site do DETRAN está fora do ar ou os dados digitados (CPF/CNH) não conferem na base deles.
+                            Pode ser uma instabilidade no site ou uma divergência nos dados (CPF/CNH).
                         </p>
                     </div>
-                    <p style="margin-top: 15px; font-weight: bold;">Não se preocupe! Nosso time pode consultar manualmente para você.</p>
+                    <p style="margin-top: 15px; font-weight: bold;">Fale conosco agora que consultamos manualmente para você.</p>
                 `;
 
                 // Botão WHATSAPP
                 btnAction.innerText = "FALAR COM SUPORTE NO WHATSAPP";
                 btnAction.style.background = "#25D366"; 
                 btnAction.onclick = () => {
-                    // Coloque seu número aqui
+                    // SEU NÚMERO
                     const textoZap = encodeURIComponent(`Olá, tentei consultar minha CNH (CPF: ${cpfDigits}) e deu erro no site. Podem me ajudar?`);
                     window.open(`https://wa.me/5521999999999?text=${textoZap}`, '_blank');
                 };
@@ -1501,7 +1485,7 @@
                 btnSecondary.innerText = "Tentar Novamente";
                 btnSecondary.onclick = () => goToScreen2();
 
-                goToScreen3(); // Mostra a tela de erro
+                goToScreen3(); 
                 return;
             }
 
