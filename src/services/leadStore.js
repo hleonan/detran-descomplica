@@ -2,9 +2,9 @@ import fs from "fs";
 
 // ====================================================
 // CONFIGURAÇÃO DO GOOGLE SHEETS
-// https://script.google.com/macros/s/AKfycbwsDWu8AgHvGUp5UgdbL9JCOTEPUxjThba1LLKGo8KE_TyJgqVYB5xA8A8Zy1JtNJcF/exec
 // ====================================================
-const SHEET_URL = "COLE_SUA_URL_DO_APPS_SCRIPT_AQUI"; 
+// URL CORRIGIDA (Copiada do seu comentário anterior)
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbwsDWu8AgHvGUp5UgdbL9JCOTEPUxjThba1LLKGo8KE_TyJgqVYB5xA8A8Zy1JtNJcF/exec"; 
 
 // Armazenamento em memória (Backup rápido)
 const leadsMap = new Map();
@@ -48,12 +48,14 @@ export async function registrarLead(dados) {
  * Envia os dados para a planilha via Webhook
  */
 async function enviarParaGoogleSheets(lead) {
+  // Verificação de segurança para não enviar se a URL estiver errada
   if (!SHEET_URL || SHEET_URL.includes("COLE_SUA_URL")) {
-    console.warn("[LEADS] URL do Google Sheets não configurada.");
+    console.warn("[LEADS] URL do Google Sheets não configurada corretamente.");
     return;
   }
 
   try {
+    // IMPORTANTE: O Apps Script exige redirecionamento (follow: true)
     await fetch(SHEET_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -63,7 +65,8 @@ async function enviarParaGoogleSheets(lead) {
         status: lead.status,
         motivo: lead.motivo,
         origem: lead.origem
-      })
+      }),
+      redirect: "follow" 
     });
     console.log("[LEADS] Enviado para o Google Sheets com sucesso.");
   } catch (error) {
@@ -71,7 +74,7 @@ async function enviarParaGoogleSheets(lead) {
   }
 }
 
-// --- Funções Auxiliares (Mantidas do original) ---
+// --- Funções Auxiliares ---
 
 function salvarLeadsNoArquivo() {
   try {
