@@ -2,7 +2,7 @@ import fs from "fs";
 
 // ====================================================
 // CONFIGURAÇÃO DO GOOGLE SHEETS
-// Cole aqui a URL do seu Web App do Google Apps Script
+// https://script.google.com/macros/s/AKfycbwsDWu8AgHvGUp5UgdbL9JCOTEPUxjThba1LLKGo8KE_TyJgqVYB5xA8A8Zy1JtNJcF/exec
 // ====================================================
 const SHEET_URL = "COLE_SUA_URL_DO_APPS_SCRIPT_AQUI"; 
 
