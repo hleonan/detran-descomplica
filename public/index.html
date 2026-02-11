@@ -1197,24 +1197,23 @@
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
 
       // ==========================================
-      // SISTEMA DE LOADING INTELIGENTE (MELHORADO)
+      // SISTEMA DE LOADING INTELIGENTE
       // ==========================================
       let loadingInterval;
       let loadingStepIndex = 0;
 
-      // Mensagens sequenciais que simulam o progresso real da automação
       const loadingSteps = [
-          { msg: "Iniciando conexão segura com o DETRAN-RJ...", pct: 5, tip: "Estamos acessando o sistema oficial do DETRAN-RJ. Esse processo pode levar de 30 a 60 segundos." },
-          { msg: "Acessando o portal de infrações...", pct: 12, tip: "O site do DETRAN pode demorar um pouco para responder. Fique tranquilo, estamos trabalhando." },
-          { msg: "Preenchendo seus dados no formulário...", pct: 20, tip: "Seus dados estão sendo inseridos de forma segura no sistema do governo." },
-          { msg: "Resolvendo verificação de segurança (Captcha)...", pct: 30, tip: "O DETRAN exige uma verificação anti-robô. Nosso sistema resolve isso automaticamente para você." },
-          { msg: "Captcha enviado. Aguardando validação...", pct: 45, tip: "A validação do Captcha pode levar alguns segundos. É o passo mais demorado do processo." },
-          { msg: "Captcha resolvido! Enviando consulta...", pct: 55, tip: "Ótimo! A verificação foi aprovada. Agora estamos consultando seu prontuário." },
-          { msg: "Consultando seu prontuário no DETRAN...", pct: 65, tip: "O sistema está buscando todas as informações sobre infrações, multas e processos vinculados à sua CNH." },
-          { msg: "Analisando resultado da consulta...", pct: 75, tip: "Estamos verificando se existem pendências, multas ou processos de suspensão." },
-          { msg: "Gerando sua Certidão Digital...", pct: 85, tip: "A certidão está sendo gerada com os dados oficiais do DETRAN-RJ." },
-          { msg: "Finalizando e salvando documento...", pct: 92, tip: "Quase pronto! Estamos preparando o resultado para você." },
-          { msg: "Verificação completa. Preparando resultado...", pct: 97, tip: "Tudo certo! Em instantes você verá o resultado da sua consulta." },
+          { msg: "Iniciando conexão segura com o DETRAN-RJ...", pct: 5, tip: "Estamos acessando o sistema oficial do DETRAN-RJ." },
+          { msg: "Acessando o portal de infrações...", pct: 12, tip: "O site do DETRAN pode demorar um pouco para responder." },
+          { msg: "Preenchendo seus dados no formulário...", pct: 20, tip: "Seus dados estão sendo inseridos de forma segura." },
+          { msg: "Resolvendo verificação de segurança (Captcha)...", pct: 30, tip: "Nosso sistema resolve o Captcha automaticamente." },
+          { msg: "Captcha enviado. Aguardando validação...", pct: 45, tip: "A validação do Captcha é o passo mais demorado." },
+          { msg: "Captcha resolvido! Enviando consulta...", pct: 55, tip: "Verificação aprovada. Consultando prontuário." },
+          { msg: "Consultando seu prontuário no DETRAN...", pct: 65, tip: "Buscando infrações, multas e processos." },
+          { msg: "Analisando resultado da consulta...", pct: 75, tip: "Verificando pendências ou bloqueios." },
+          { msg: "Gerando sua Certidão Digital...", pct: 85, tip: "A certidão está sendo gerada." },
+          { msg: "Finalizando e salvando documento...", pct: 92, tip: "Quase pronto!" },
+          { msg: "Verificação completa. Preparando resultado...", pct: 97, tip: "Tudo certo! Abrindo resultado..." },
       ];
 
       function startSmartLoading(initialMessage = "Processando...") {
@@ -1235,11 +1234,9 @@
 
           if(loadingInterval) clearInterval(loadingInterval);
 
-          // Avança as mensagens a cada 4-7 segundos (variável para parecer natural)
           loadingInterval = setInterval(() => {
               loadingStepIndex++;
               if (loadingStepIndex >= loadingSteps.length) {
-                  // Fica no último passo, não reseta
                   loadingStepIndex = loadingSteps.length - 1;
               }
               const step = loadingSteps[loadingStepIndex];
@@ -1247,7 +1244,7 @@
               if(progressFill) progressFill.style.width = step.pct + "%";
               if(progressLabel) progressLabel.innerText = `Etapa ${loadingStepIndex + 1} de ${loadingSteps.length}`;
               if(tipEl) tipEl.innerText = step.tip;
-          }, 4500 + Math.random() * 2500); // 4.5s a 7s entre cada etapa
+          }, 4000 + Math.random() * 2000);
       }
 
       function updateLoadingMessage(msg) {
@@ -1264,7 +1261,6 @@
           const overlay = document.getElementById("smartLoading");
           const progressFill = document.getElementById("loadingProgressFill");
           if(progressFill) progressFill.style.width = "100%";
-          // Pequeno delay para o usuário ver 100%
           setTimeout(() => {
               if(overlay) overlay.classList.remove("active");
               if(loadingInterval) clearInterval(loadingInterval);
@@ -1301,19 +1297,12 @@
       }
 
       // ==========================================
-      // MÉTODO C: CÂMERA DO CELULAR (NOVO)
+      // CÂMERA DO CELULAR
       // ==========================================
-
-      /**
-       * Detecta se o dispositivo suporta câmera via getUserMedia
-       */
       function suportaCamera() {
         return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
       }
 
-      /**
-       * Abre a câmera - tenta getUserMedia primeiro, fallback para input capture
-       */
       async function abrirCamera() {
         if (suportaCamera()) {
           try {
@@ -1321,22 +1310,15 @@
             document.getElementById("cameraModal").classList.add("active");
           } catch (err) {
             console.warn("getUserMedia falhou, usando fallback:", err.message);
-            // Fallback: usa o input com capture="environment"
             document.getElementById("cameraCapture").click();
           }
         } else {
-          // Dispositivo sem getUserMedia: usa input capture
           document.getElementById("cameraCapture").click();
         }
       }
 
-      /**
-       * Inicia o stream da câmera (preferencialmente traseira)
-       */
       async function iniciarCameraStream() {
-        // Para stream anterior se existir
         pararCameraStream();
-
         const constraints = {
           video: {
             facingMode: usandoCameraFrontal ? "user" : { ideal: "environment" },
@@ -1345,16 +1327,12 @@
           },
           audio: false
         };
-
         cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
         const video = document.getElementById("cameraVideo");
         video.srcObject = cameraStream;
         await video.play();
       }
 
-      /**
-       * Para o stream da câmera
-       */
       function pararCameraStream() {
         if (cameraStream) {
           cameraStream.getTracks().forEach(track => track.stop());
@@ -1364,9 +1342,6 @@
         if (video) video.srcObject = null;
       }
 
-      /**
-       * Troca entre câmera frontal e traseira
-       */
       async function trocarCamera() {
         usandoCameraFrontal = !usandoCameraFrontal;
         try {
@@ -1377,51 +1352,32 @@
         }
       }
 
-      /**
-       * Captura a foto do vídeo da câmera
-       */
       function capturarFoto() {
         const video = document.getElementById("cameraVideo");
         const canvas = document.getElementById("cameraCanvas");
-        
-        // Define o tamanho do canvas igual ao vídeo
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        
-        // Desenha o frame atual no canvas
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        // Converte para blob (JPEG com qualidade 90%)
         canvas.toBlob(async (blob) => {
-          // Fecha a câmera
           fecharCamera();
-          
-          // Mostra preview
           const previewUrl = URL.createObjectURL(blob);
           const previewContainer = document.getElementById("photoPreview");
           const previewImg = document.getElementById("photoPreviewImg");
           previewImg.src = previewUrl;
           previewContainer.classList.add("active");
-          
-          // Envia para OCR
           await enviarFotoParaOCR(blob);
         }, "image/jpeg", 0.9);
       }
 
-      /**
-       * Fecha o modal da câmera
-       */
       function fecharCamera() {
         pararCameraStream();
         document.getElementById("cameraModal").classList.remove("active");
       }
 
-      /**
-       * Envia a foto capturada para o OCR no backend
-       */
       async function enviarFotoParaOCR(blob) {
-        origemDados = "camera"; // Rastrear origem para o lead
+        origemDados = "camera";
         startSmartLoading("Lendo foto da CNH...");
 
         const formData = new FormData();
@@ -1439,7 +1395,6 @@
           }
 
           if (resp.ok && (data.cpf || data.cnh)) {
-            // Preenche os campos
             if (data.cpf) {
               const cpfField = document.getElementById("cpf");
               cpfField.value = formatarCPF(data.cpf);
@@ -1450,8 +1405,6 @@
               cnhField.value = data.cnh;
               cnhField.classList.add("filled-by-ocr");
             }
-
-            // Inicia consulta automaticamente
             updateLoadingMessage("Dados extraídos! Iniciando consulta...");
             handleDataEntry(null);
           } else {
@@ -1464,9 +1417,6 @@
         }
       }
 
-      /**
-       * Formata CPF para exibição (000.000.000-00)
-       */
       function formatarCPF(cpf) {
         const digits = cpf.replace(/\D/g, "");
         if (digits.length !== 11) return cpf;
@@ -1476,64 +1426,107 @@
       // ==========================================
       // LÓGICA PRINCIPAL: ANÁLISE (CONSULTAR CERTIDÃO)
       // ==========================================
-      // Variável para rastrear a origem dos dados (lead)
       let origemDados = "manual";
 
       async function handleDataEntry(event) {
         if(event && event.preventDefault) event.preventDefault();
-    
+       
         const cpfField = document.getElementById("cpf");
         const cnhField = document.getElementById("cnh");
         const cpf = cpfField.value;
         const cnh = cnhField.value;
-    
-        if (!validarCPF(cpf)) { stopSmartLoading(); return alert("CPF inválido!"); }
-        if (cnh.replace(/\D/g, "").length < 9) { stopSmartLoading(); return alert("CNH inválida!"); }
-    
         const cpfDigits = cpf.replace(/\D/g, "");
         const cnhDigits = cnh.replace(/\D/g, "");
-    
+       
+        if (!validarCPF(cpf)) { stopSmartLoading(); return alert("CPF inválido!"); }
+        if (cnhDigits.length < 9) { stopSmartLoading(); return alert("CNH inválida!"); }
+       
         const overlay = document.getElementById("smartLoading");
         if (!overlay.classList.contains("active")) {
             startSmartLoading(loadingSteps[0].msg);
         }
-    
+       
         try {
           const resp = await fetch(`${API_URL}/consultar-certidao`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits, origem: origemDados }),
           });
-    
+       
           const data = await resp.json();
           
+          // ========================================================
+          // TRATAMENTO DE ERROS (COM SUPORTE WHATSAPP)
+          // ========================================================
           if (!resp.ok || !data.ok) {
             stopSmartLoading();
-            alert("Erro: " + (data.error || "Falha na consulta. Verifique os dados."));
+            
+            const msgErro = data.error || "Erro desconhecido";
+            
+            // Se o backend disser que é falha do Detran/Dados, mostra tela amigável
+            const erroDetran = msgErro.includes("DETRAN_FAIL") || msgErro.includes("Timeout");
+
+            if (erroDetran) {
+                // Configura Tela 3 para Modo Erro
+                const icon = document.getElementById("result-icon");
+                const title = document.getElementById("result-title");
+                const msg = document.getElementById("result-message");
+                const btnAction = document.getElementById("btn-result-action");
+                const btnSecondary = document.getElementById("btn-result-secondary");
+
+                icon.innerText = "😓";
+                title.innerText = "Ops! O site do DETRAN está instável.";
+                title.style.color = "#d32f2f";
+
+                msg.innerHTML = `
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 5px solid #ffc107; text-align: left;">
+                        <p style="color: #333; font-weight: bold;">Não conseguimos emitir sua certidão automaticamente.</p>
+                        <p style="font-size: 0.9em; margin-top: 5px;">
+                            Isso acontece quando o site do DETRAN está fora do ar ou os dados digitados (CPF/CNH) não conferem na base deles.
+                        </p>
+                    </div>
+                    <p style="margin-top: 15px; font-weight: bold;">Não se preocupe! Nosso time pode consultar manualmente para você.</p>
+                `;
+
+                // Botão WHATSAPP
+                btnAction.innerText = "FALAR COM SUPORTE NO WHATSAPP";
+                btnAction.style.background = "#25D366"; 
+                btnAction.onclick = () => {
+                    // Coloque seu número aqui
+                    const textoZap = encodeURIComponent(`Olá, tentei consultar minha CNH (CPF: ${cpfDigits}) e deu erro no site. Podem me ajudar?`);
+                    window.open(`https://wa.me/5521999999999?text=${textoZap}`, '_blank');
+                };
+
+                btnSecondary.style.display = "block";
+                btnSecondary.innerText = "Tentar Novamente";
+                btnSecondary.onclick = () => goToScreen2();
+
+                goToScreen3(); // Mostra a tela de erro
+                return;
+            }
+
+            alert("Erro: " + msgErro);
             return;
           }
 
-          // SUCESSO: TRANSIÇÃO AUTOMÁTICA
+          // ========================================================
+          // SUCESSO
+          // ========================================================
           if(loadingInterval) clearInterval(loadingInterval);
           updateLoadingMessage("Consulta finalizada com sucesso!");
           updateLoadingProgress(100);
           await new Promise(resolve => setTimeout(resolve, 1500));
           stopSmartLoading();
-    
-          // CONFIGURA A TELA 3 DINAMICAMENTE
+       
           const icon = document.getElementById("result-icon");
           const title = document.getElementById("result-title");
           const msg = document.getElementById("result-message");
           const btnAction = document.getElementById("btn-result-action");
           const btnSecondary = document.getElementById("btn-result-secondary");
-
-          // Nome do motorista (se veio da certidão)
           const nomeMotorista = data.nome ? `<strong>${data.nome}</strong>` : "Motorista";
 
           if (data.temProblemas) {
-            // ========================================
-            // RESULTADO: COM OCORRÊNCIA / RESTRIÇÃO
-            // ========================================
+            // COM OCORRÊNCIA
             icon.innerText = "⚠️";
             title.innerText = "ATENÇÃO: FORAM ENCONTRADAS OCORRÊNCIAS";
             title.style.color = "#FF4B2B";
@@ -1541,45 +1534,31 @@
             msg.innerHTML = `
               <div style="text-align: left; max-width: 550px; margin: 0 auto;">
                 <p style="font-size: 18px; margin-bottom: 15px;">
-                  ${nomeMotorista}, identificamos <strong style="color: #FF4B2B;">pendências</strong> no seu prontuário junto ao DETRAN-RJ.
+                  ${nomeMotorista}, identificamos <strong style="color: #FF4B2B;">pendências</strong> no seu prontuário.
                 </p>
                 <p style="font-size: 16px; color: #555; margin-bottom: 15px;">
-                  <strong>Motivo:</strong> ${data.motivo || "Restrição identificada na certidão."}
+                  <strong>Motivo:</strong> ${data.motivo || "Restrição identificada."}
                 </p>
-                <div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 15px; border-radius: 8px;">
                   <p style="font-size: 14px; color: #856404; margin: 0;">
-                    <strong>O que isso significa?</strong><br>
-                    Existem infrações, multas ou processos vinculados à sua CNH. 
-                    Isso pode levar à <strong>suspensão do direito de dirigir</strong> se não for resolvido.
-                  </p>
-                </div>
-                <div style="background: #F8D7DA; border-left: 4px solid #DC3545; padding: 15px; border-radius: 8px;">
-                  <p style="font-size: 14px; color: #721C24; margin: 0;">
-                    <strong>Recomendação:</strong> Consulte um despachante especializado para avaliar suas opções de defesa e recurso antes que o prazo expire.
+                    Isso pode levar à <strong>suspensão do direito de dirigir</strong>.
                   </p>
                 </div>
               </div>`;
             
-            btnAction.innerText = "VER SERVIÇOS DISPONÍVEIS";
+            btnAction.innerText = "FALAR COM ESPECIALISTA AGORA";
             btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)";
             btnAction.onclick = () => goToScreen4();
 
-            // Botão secundário para baixar a certidão mesmo com restrição
             btnSecondary.style.display = "block";
             btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
             btnSecondary.style.background = "#6c757d";
             btnSecondary.onclick = () => {
-                if(data.caseId) {
-                    window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
-                } else {
-                    alert("Certidão não disponível.");
-                }
+                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
             };
 
           } else {
-            // ========================================
-            // RESULTADO: NADA CONSTA (TUDO OK)
-            // ========================================
+            // NADA CONSTA
             icon.innerText = "✅";
             title.innerText = "PARABÉNS! SUA CNH ESTÁ LIMPA";
             title.style.color = "#28A745";
@@ -1587,29 +1566,20 @@
             msg.innerHTML = `
               <div style="text-align: left; max-width: 550px; margin: 0 auto;">
                 <p style="font-size: 18px; margin-bottom: 15px;">
-                  ${nomeMotorista}, não encontramos <strong style="color: #28A745;">nenhuma irregularidade</strong> no seu prontuário junto ao DETRAN-RJ.
+                  ${nomeMotorista}, não encontramos irregularidades.
                 </p>
-                <div style="background: #D4EDDA; border-left: 4px solid #28A745; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="background: #D4EDDA; border-left: 4px solid #28A745; padding: 15px; border-radius: 8px;">
                   <p style="font-size: 14px; color: #155724; margin: 0;">
-                    <strong>Certidão de Nada Consta</strong> emitida com sucesso!<br>
-                    Não constam infrações de trânsito, multas, pontuação, suspensão do direito de dirigir ou cassação da CNH no sistema do DETRAN-RJ.
-                    ${data.numeroCertidao ? '<br><br><strong>Nº da Certidão:</strong> ' + data.numeroCertidao : ''}
+                    <strong>Certidão de Nada Consta</strong> emitida com sucesso!
+                    ${data.numeroCertidao ? '<br>Nº: ' + data.numeroCertidao : ''}
                   </p>
                 </div>
-                <p style="font-size: 13px; color: #888;">
-                  <strong>Validade:</strong> Esta certidão tem validade de 24 horas a partir da emissão.
-                  A autenticidade pode ser confirmada no site oficial do DETRAN-RJ.
-                </p>
               </div>`;
             
-            btnAction.innerText = "BAIXAR CERTIDÃO NADA CONSTA (PDF)";
+            btnAction.innerText = "BAIXAR CERTIDÃO (PDF)";
             btnAction.style.background = "linear-gradient(135deg, #28A745 0%, #20c997 100%)";
             btnAction.onclick = () => {
-                if(data.caseId) {
-                    window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
-                } else {
-                    alert("Erro: ID da certidão não encontrado.");
-                }
+                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
             };
 
             btnSecondary.style.display = "block";
@@ -1618,7 +1588,6 @@
             btnSecondary.onclick = () => goToScreen5();
           }
 
-          // Reset origem para próxima consulta
           origemDados = "manual";
           goToScreen3();
 
@@ -1630,10 +1599,9 @@
       }
 
       // ==========================================
-      // LÓGICA DE UPLOAD (OCR) - FLUXO AUTOMÁTICO
+      // LÓGICA DE UPLOAD (OCR)
       // ==========================================
       document.addEventListener("DOMContentLoaded", () => {
-        // Handler para upload de arquivo (Método B)
         const fileInput = document.getElementById("fileUpload");
         if (fileInput) {
           fileInput.addEventListener("change", async (e) => {
@@ -1643,30 +1611,21 @@
           });
         }
 
-        // Handler para captura de câmera via input (Fallback do Método C)
         const cameraInput = document.getElementById("cameraCapture");
         if (cameraInput) {
           cameraInput.addEventListener("change", async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-
-            // Mostra preview
             const previewUrl = URL.createObjectURL(file);
-            const previewContainer = document.getElementById("photoPreview");
-            const previewImg = document.getElementById("photoPreviewImg");
-            previewImg.src = previewUrl;
-            previewContainer.classList.add("active");
-
+            document.getElementById("photoPreviewImg").src = previewUrl;
+            document.getElementById("photoPreview").classList.add("active");
             await processarArquivoOCR(file, "camera");
           });
         }
       });
 
-      /**
-       * Processa arquivo (upload ou foto) via OCR
-       */
       async function processarArquivoOCR(file, origem = "upload") {
-        origemDados = origem; // Rastrear origem para o lead
+        origemDados = origem;
         startSmartLoading("Lendo documento da CNH..."); 
 
         const formData = new FormData();
@@ -1694,13 +1653,11 @@
                 cnhField.value = data.cnh;
                 cnhField.classList.add("filled-by-ocr");
               }
-              
               updateLoadingMessage("Dados extraídos. Iniciando consulta...");
               handleDataEntry(null);
-
           } else {
               stopSmartLoading();
-              alert("Erro: " + (data.error || "Não foi possível ler os dados da imagem."));
+              alert("Erro: " + (data.error || "Não foi possível ler os dados."));
           }
         } catch(err) {
           stopSmartLoading();
@@ -1716,17 +1673,8 @@
                 const r = await fetch(`${API_URL}/ocr-cnh/status/${jobId}`);
                 const d = await r.json();
                 if (d.status === "done") {
-                    if (d.cpf) {
-                      const cpfField = document.getElementById("cpf");
-                      cpfField.value = formatarCPF(d.cpf);
-                      cpfField.classList.add("filled-by-ocr");
-                    }
-                    if (d.cnh) {
-                      const cnhField = document.getElementById("cnh");
-                      cnhField.value = d.cnh;
-                      cnhField.classList.add("filled-by-ocr");
-                    }
-                    
+                    if (d.cpf) document.getElementById("cpf").value = formatarCPF(d.cpf);
+                    if (d.cnh) document.getElementById("cnh").value = d.cnh;
                     updateLoadingMessage("PDF processado. Iniciando consulta...");
                     handleDataEntry(null);
                     return;
@@ -1748,7 +1696,7 @@
       async function consultarMultas() {
         const cpf = document.getElementById("cpf")?.value?.replace(/\D/g, "");
         const cnh = document.getElementById("cnh")?.value?.replace(/\D/g, "");
-        
+       
         if (!cpf || !cnh) {
           document.getElementById("multas-subtitle").innerText = "Dados não disponíveis. Volte e faça a consulta primeiro.";
           document.getElementById("multas-loading").style.display = "none";
@@ -1781,7 +1729,6 @@
             return;
           }
 
-          // Mostra resumo e multas
           document.getElementById("multas-subtitle").innerText = `${data.multas.length} multa(s) encontrada(s)`;
           if (data.resumo) {
             document.getElementById("multas-resumo").style.display = "grid";
@@ -1817,14 +1764,10 @@
         }
       }
 
-      // Funções Placeholder
       function abrirCertidao() { alert("Use a consulta na tela inicial para gerar a certidão."); }
       function selectService(s) { alert("Serviço selecionado: " + s); }
       function selectOtherService(s) { alert("Outro Serviço: " + s); }
       function showProfessionalLogin() { alert("Login Profissional em breve."); }
-      function showLoadingModal() { /* Compatibilidade */ }
-      function hideLoadingModal() { /* Compatibilidade */ }
-      function cancelLoading() { stopSmartLoading(); }
     </script>
 </body>
 </html>
