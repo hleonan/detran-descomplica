@@ -2,13 +2,16 @@
 // ============================================================
 // Despachante Virtual RJ - Automação de Certidão DETRAN
 // ============================================================
-// Estratégia: Acesso Direto (rápido) + Trava de Segurança
-// - Navega direto na URL do iframe do DETRAN
-// - Resolve o reCAPTCHA v2 via 2Captcha
-// - Após clicar "Consultar", valida o texto da tela:
-//   * Se contiver erro → lança DETRAN_FAIL (Frontend mostra WhatsApp)
-//   * Se sucesso → extrai dados do HTML + gera PDF via screenshot
-// - Retorna { pdfBuffer, analise } para o api.js
+// Estratégia: Acesso Direto + Extrato Completo + 5 Cenários
+//
+// Fluxo:
+// 1. Acessa URL direta do formulário (rápido)
+// 2. Preenche CPF/CNH + resolve reCAPTCHA via 2Captcha
+// 3. Clica "Consultar" → valida resultado (trava DETRAN_FAIL)
+// 4. Clica "EMITIR EXTRATO COMPLETO" (página 2)
+// 5. Classifica em 5 cenários: OK, MULTAS, SUSPENSAO, CASSACAO, DETRAN_FAIL
+// 6. Gera PDF via screenshot (ambas as páginas)
+// 7. Retorna { pdfBuffer, analise } para o api.js
 // ============================================================
 
 import { chromium } from "playwright";
@@ -29,28 +32,8 @@ const FRASES_ERRO = [
   "PREENCHA TODOS OS CAMPOS",
 ];
 
-// Frases que indicam SUCESSO / Certidão válida
-const FRASES_SUCESSO = [
-  "NADA CONSTA",
-  "CERTIDÃO",
-  "CERTIFICAMOS",
-];
-
-// Frases que indicam RESTRIÇÃO
-const FRASES_RESTRICAO = [
-  "CONSTA",
-  "PROCESSO",
-  "SUSPENSÃO",
-  "SUSPENSAO",
-  "CASSAÇÃO",
-  "CASSACAO",
-  "PENALIDADE",
-  "BLOQUEIO",
-];
-
 /**
  * Resolve o reCAPTCHA v2 usando a API do 2Captcha.
- * Retorna o token de resposta ou lança erro.
  */
 async function resolverCaptcha2Captcha(twocaptchaKey, sitekey, pageUrl) {
   console.log("[CAPTCHA] Enviando para 2Captcha...");
@@ -71,7 +54,6 @@ async function resolverCaptcha2Captcha(twocaptchaKey, sitekey, pageUrl) {
   const MAX_WAIT = 120000; // 2 minutos
 
   while (Date.now() - startTime < MAX_WAIT) {
-    // Espera 5 segundos entre cada tentativa
     await new Promise((r) => setTimeout(r, 5000));
 
     const resResp = await fetch(
@@ -94,27 +76,37 @@ async function resolverCaptcha2Captcha(twocaptchaKey, sitekey, pageUrl) {
 }
 
 /**
- * Extrai dados da certidão a partir do texto visível na tela.
- * Retorna um objeto de análise com status, motivo, nome, etc.
+ * Classifica a situação da CNH em 5 cenários com base no texto do extrato.
+ *
+ * Cenários:
+ *   "OK"        → Nada consta
+ *   "MULTAS"    → Só multas (sem suspensão/cassação)
+ *   "SUSPENSAO" → Multas + processo de suspensão
+ *   "CASSACAO"  → Multas + suspensão + cassação
+ *
+ * Retorna objeto analise com: status, motivo, temProblemas, temMultas,
+ * temSuspensao, temCassacao, nome, numeroCertidao
  */
-function analisarTextoCertidao(textoTela) {
+function classificarCertidao(textoTela) {
   const textoUpper = textoTela.toUpperCase();
 
-  // Dados padrão
   const analise = {
-    status: "DESCONHECIDO",
-    motivo: "Não foi possível classificar a certidão",
+    status: "OK",
+    motivo: "",
     temProblemas: false,
+    temMultas: false,
+    temSuspensao: false,
+    temCassacao: false,
     nome: null,
     numeroCertidao: null,
     dados: {},
   };
 
-  // 1. Tenta extrair o NOME do motorista
-  //    Padrão comum: "Nome: FULANO DE TAL" ou "Condutor(a): FULANO"
+  // ── Extrair NOME do motorista ──
   const nomePatterns = [
     /(?:Nome|Condutor(?:\(a\))?|Habilitado)\s*[:\-]\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]+)/i,
     /(?:CERTIFICAMOS QUE|CERTIFICA QUE)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]+?)(?:\s*,|\s+CPF|\s+INSCRIT)/i,
+    /(?:Condutor|Nome)\s*[:\-]?\s*\n?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]{3,})/i,
   ];
   for (const pattern of nomePatterns) {
     const match = textoTela.match(pattern);
@@ -124,47 +116,97 @@ function analisarTextoCertidao(textoTela) {
     }
   }
 
-  // 2. Tenta extrair o número da certidão
+  // ── Extrair número da certidão ──
   const certidaoMatch = textoTela.match(
-    /(?:Certid[aã]o|Certificado)\s*(?:n[°ºo]?|Número)?\s*[:\-]?\s*(\d[\d.\-\/]+)/i
+    /(?:Certid[aã]o|Certificado)\s*(?:n[°ºo]?|N[úu]mero)?\s*[:\-]?\s*(\d[\d.\-\/]+)/i
   );
   if (certidaoMatch) {
     analise.numeroCertidao = certidaoMatch[1].trim();
   }
 
-  // 3. Classifica o status
+  // ── Detectar ocorrências ──
+  // Multas / Infrações
+  const temMultas =
+    textoUpper.includes("MULTA") ||
+    textoUpper.includes("INFRAÇÃO") ||
+    textoUpper.includes("INFRACAO") ||
+    textoUpper.includes("AUTO DE INFRAÇÃO") ||
+    textoUpper.includes("AUTO DE INFRACAO") ||
+    textoUpper.includes("PENALIDADE") ||
+    textoUpper.includes("PONTUAÇÃO") ||
+    textoUpper.includes("PONTUACAO") ||
+    textoUpper.includes("PONTOS");
+
+  // Suspensão
+  const temSuspensao =
+    textoUpper.includes("SUSPENSÃO") ||
+    textoUpper.includes("SUSPENSAO") ||
+    textoUpper.includes("PROCESSO DE SUSPENS") ||
+    textoUpper.includes("DIREITO DE DIRIGIR SUSPENSO") ||
+    textoUpper.includes("SUSPENDER O DIREITO");
+
+  // Cassação
+  const temCassacao =
+    textoUpper.includes("CASSAÇÃO") ||
+    textoUpper.includes("CASSACAO") ||
+    textoUpper.includes("PROCESSO DE CASSAÇ") ||
+    textoUpper.includes("PROCESSO DE CASSAC") ||
+    textoUpper.includes("CASSAR") ||
+    textoUpper.includes("CASSADA");
+
+  // Nada Consta
   const temNadaConsta = textoUpper.includes("NADA CONSTA");
-  const temCertidao = FRASES_SUCESSO.some((f) => textoUpper.includes(f));
-  const temRestricao = FRASES_RESTRICAO.some((f) => textoUpper.includes(f));
 
-  if (temNadaConsta && !temRestricao) {
-    // NADA CONSTA puro
-    analise.status = "OK";
-    analise.motivo = "Certidão de Nada Consta emitida com sucesso.";
-    analise.temProblemas = false;
-  } else if (temRestricao) {
-    // Tem restrição
-    analise.status = "RESTRICAO";
+  analise.temMultas = temMultas;
+  analise.temSuspensao = temSuspensao;
+  analise.temCassacao = temCassacao;
+
+  // ── Classificar cenário (do mais grave para o menos grave) ──
+  if (temCassacao) {
+    // Cenário 4: Multas + Suspensão + Cassação
+    analise.status = "CASSACAO";
     analise.temProblemas = true;
-
-    // Detalha o motivo
-    if (textoUpper.includes("SUSPENSÃO") || textoUpper.includes("SUSPENSAO")) {
-      analise.motivo = "Processo de suspensão do direito de dirigir identificado.";
-    } else if (textoUpper.includes("CASSAÇÃO") || textoUpper.includes("CASSACAO")) {
-      analise.motivo = "Processo de cassação da CNH identificado.";
-    } else if (textoUpper.includes("BLOQUEIO")) {
-      analise.motivo = "Bloqueio identificado no prontuário.";
-    } else if (textoUpper.includes("PROCESSO")) {
-      analise.motivo = "Processo administrativo em andamento.";
-    } else {
-      analise.motivo = "Restrição identificada na certidão.";
-    }
-  } else if (temCertidao) {
-    // Tem "CERTIDÃO" mas sem "NADA CONSTA" explícito — pode ser OK
+    analise.motivo =
+      "Sua CNH está em risco de cassação. Isso significa que você pode perder sua habilitação e precisar iniciar um novo processo do zero. Nossa equipe pode te ajudar a reverter essa situação.";
+  } else if (temSuspensao) {
+    // Cenário 3: Multas + Suspensão
+    analise.status = "SUSPENSAO";
+    analise.temProblemas = true;
+    analise.motivo =
+      "Sua CNH está em risco iminente de suspensão. Identificamos um processo de suspensão do direito de dirigir. Nossa equipe pode te ajudar a resolver antes que seja tarde.";
+  } else if (temMultas && !temNadaConsta) {
+    // Cenário 2: Só multas
+    analise.status = "MULTAS";
+    analise.temProblemas = true;
+    analise.motivo =
+      "Identificamos multas no seu prontuário. Se não forem tratadas, podem gerar um processo de suspensão da sua CNH. Nossa equipe pode te ajudar a resolver.";
+  } else if (temNadaConsta) {
+    // Cenário 5: Nada Consta
     analise.status = "OK";
-    analise.motivo = "Certidão emitida. Sem restrições aparentes.";
     analise.temProblemas = false;
+    analise.motivo =
+      "Parabéns! Sua CNH está limpa, sem nenhuma ocorrência registrada no DETRAN.";
+  } else {
+    // Fallback: se não identificou nenhum padrão claro
+    // Verifica se tem algum conteúdo de certidão
+    const temCertidao =
+      textoUpper.includes("CERTIDÃO") ||
+      textoUpper.includes("CERTIFICAMOS") ||
+      textoUpper.includes("CERTIDAO");
+
+    if (temCertidao) {
+      analise.status = "OK";
+      analise.temProblemas = false;
+      analise.motivo = "Certidão emitida. Sem restrições aparentes.";
+    } else {
+      analise.status = "OK";
+      analise.temProblemas = false;
+      analise.motivo = "Consulta realizada com sucesso.";
+    }
   }
+
+  console.log(`[CLASSIFICAÇÃO] Status: ${analise.status}`);
+  console.log(`[CLASSIFICAÇÃO] Multas: ${temMultas} | Suspensão: ${temSuspensao} | Cassação: ${temCassacao} | Nada Consta: ${temNadaConsta}`);
 
   return analise;
 }
@@ -172,18 +214,17 @@ function analisarTextoCertidao(textoTela) {
 /**
  * Função principal: Emite a certidão do DETRAN-RJ.
  *
- * @param {string} cpf - CPF do motorista (só dígitos ou formatado)
- * @param {string} cnh - Número da CNH (só dígitos ou formatado)
+ * @param {string} cpf - CPF do motorista
+ * @param {string} cnh - Número da CNH
  * @returns {Promise<{pdfBuffer: Buffer, analise: Object}>}
  */
 export async function emitirCertidaoPDF(cpf, cnh) {
   console.log("[DETRAN] ========================================");
-  console.log("[DETRAN] Iniciando automação (Acesso Direto v3)");
+  console.log("[DETRAN] Iniciando automação (v3.1 - Extrato Completo)");
   console.log("[DETRAN] ========================================");
 
   if (!cpf || !cnh) throw new Error("CPF e CNH são obrigatórios");
 
-  // Limpeza dos dados
   const cpfLimpo = cpf.replace(/\D/g, "");
   const cnhLimpo = cnh.replace(/\D/g, "");
 
@@ -228,13 +269,11 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       timeout: 45000,
     });
 
-    // Espera o campo CPF aparecer (prova de que a página carregou)
-    console.log("[DETRAN] Aguardando formulário carregar...");
     await page.waitForSelector("#CertidaoCpf", {
       state: "visible",
       timeout: 30000,
     });
-    console.log("[DETRAN] Formulário carregado com sucesso!");
+    console.log("[DETRAN] Formulário carregado!");
 
     // ============================================================
     // 3. PREENCHER FORMULÁRIO
@@ -242,7 +281,6 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.log("[DETRAN] Preenchendo CPF e CNH...");
     await page.fill("#CertidaoCpf", cpfLimpo);
     await page.fill("#CertidaoCnh", cnhLimpo);
-    console.log("[DETRAN] Campos preenchidos!");
 
     // ============================================================
     // 4. RESOLVER CAPTCHA
@@ -250,7 +288,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.log("[DETRAN] Procurando reCAPTCHA...");
     let sitekey = null;
 
-    // Método 1: Buscar no iframe do reCAPTCHA
+    // Método 1: iframe do reCAPTCHA
     const recaptchaFrame = await page.$('iframe[src*="recaptcha"]');
     if (recaptchaFrame) {
       const src = await recaptchaFrame.getAttribute("src");
@@ -260,39 +298,39 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       }
     }
 
-    // Método 2: Buscar no atributo data-sitekey
+    // Método 2: atributo data-sitekey
     if (!sitekey) {
-      sitekey = await page.evaluate(() => {
-        const el = document.querySelector(".g-recaptcha");
-        return el ? el.getAttribute("data-sitekey") : null;
-      }).catch(() => null);
-    }
-
-    // Método 3: Buscar em frames internos
-    if (!sitekey) {
-      for (const frame of page.frames()) {
-        sitekey = await frame.evaluate(() => {
+      sitekey = await page
+        .evaluate(() => {
           const el = document.querySelector(".g-recaptcha");
           return el ? el.getAttribute("data-sitekey") : null;
-        }).catch(() => null);
+        })
+        .catch(() => null);
+    }
+
+    // Método 3: frames internos
+    if (!sitekey) {
+      for (const frame of page.frames()) {
+        sitekey = await frame
+          .evaluate(() => {
+            const el = document.querySelector(".g-recaptcha");
+            return el ? el.getAttribute("data-sitekey") : null;
+          })
+          .catch(() => null);
         if (sitekey) break;
       }
     }
 
     if (!sitekey) {
-      console.error("[DETRAN] reCAPTCHA sitekey não encontrada!");
       throw new Error("DETRAN_FAIL: Não foi possível encontrar o reCAPTCHA na página.");
     }
 
-    console.log(`[DETRAN] Sitekey encontrada: ${sitekey.substring(0, 20)}...`);
-
-    // Resolver via 2Captcha
+    console.log(`[DETRAN] Sitekey: ${sitekey.substring(0, 20)}...`);
     const token = await resolverCaptcha2Captcha(twocaptchaKey, sitekey, CERTIDAO_URL);
 
-    // Injetar o token na página
+    // Injetar token
     console.log("[DETRAN] Injetando token do reCAPTCHA...");
     await page.evaluate((t) => {
-      // Preenche o textarea de resposta
       const responseArea =
         document.querySelector('textarea[name="g-recaptcha-response"]') ||
         document.getElementById("g-recaptcha-response");
@@ -304,7 +342,6 @@ export async function emitirCertidaoPDF(cpf, cnh) {
         responseArea.dispatchEvent(new Event("change", { bubbles: true }));
       }
 
-      // Tenta chamar callbacks do reCAPTCHA (se existirem)
       try {
         if (window.___grecaptcha_cfg) {
           Object.values(window.___grecaptcha_cfg.clients).forEach((client) => {
@@ -320,109 +357,183 @@ export async function emitirCertidaoPDF(cpf, cnh) {
           });
         }
       } catch (e) {
-        // Ignora erros de callback — o token já foi injetado
+        // Ignora
       }
     }, token);
-    console.log("[DETRAN] Token injetado com sucesso!");
+    console.log("[DETRAN] Token injetado!");
 
     // ============================================================
     // 5. CLICAR EM "CONSULTAR"
     // ============================================================
-    console.log("[DETRAN] Clicando em Pesquisar...");
+    console.log("[DETRAN] Clicando em Consultar...");
     await page.click("#btPesquisar");
 
-    // Espera a resposta do servidor
     await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
       console.log("[DETRAN] NetworkIdle timeout (normal em sites lentos)");
     });
-
-    // Pequeno respiro para renderização completa
     await page.waitForTimeout(2000);
 
     // ============================================================
-    // 6. TRAVA DE SEGURANÇA — Validação do Resultado
+    // 6. TRAVA DE SEGURANÇA — Validação do Resultado (Página 1)
     // ============================================================
-    console.log("[DETRAN] Validando resultado da consulta...");
-    const textoTela = await page.evaluate(() => document.body.innerText);
-    const textoUpper = textoTela.toUpperCase();
+    console.log("[DETRAN] Validando resultado da consulta (Página 1)...");
+    const textoPagina1 = await page.evaluate(() => document.body.innerText);
+    const textoUpperP1 = textoPagina1.toUpperCase();
 
-    // Log do texto para debug
-    console.log(`[DETRAN] Texto da tela (primeiros 200 chars): ${textoTela.substring(0, 200)}...`);
+    console.log(`[DETRAN] Texto P1 (200 chars): ${textoPagina1.substring(0, 200)}...`);
 
-    // Verifica se a tela contém mensagens de ERRO
-    const erroEncontrado = FRASES_ERRO.find((frase) => textoUpper.includes(frase));
-
+    // Verifica ERRO
+    const erroEncontrado = FRASES_ERRO.find((frase) => textoUpperP1.includes(frase));
     if (erroEncontrado) {
-      console.error(`[DETRAN] ERRO DETECTADO NA TELA: "${erroEncontrado}"`);
-      console.error("[DETRAN] NÃO vou gerar PDF de tela de erro.");
-
-      // Registra como erro no lead
-      throw new Error(
-        "DETRAN_FAIL: O site do DETRAN recusou os dados informados. Verifique CPF e CNH."
-      );
+      console.error(`[DETRAN] ERRO NA TELA: "${erroEncontrado}"`);
+      throw new Error("DETRAN_FAIL: O site do DETRAN recusou os dados informados. Verifique CPF e CNH.");
     }
 
-    // Verifica se a tela parece ter conteúdo válido de certidão
-    const temConteudoValido = FRASES_SUCESSO.some((f) => textoUpper.includes(f));
+    // Verifica se tem conteúdo mínimo válido
+    const temConteudoMinimo =
+      textoUpperP1.includes("CERTIDÃO") ||
+      textoUpperP1.includes("CERTIDAO") ||
+      textoUpperP1.includes("CERTIFICAMOS") ||
+      textoUpperP1.includes("NADA CONSTA") ||
+      textoUpperP1.includes("CONSTA") ||
+      textoUpperP1.includes("EXTRATO") ||
+      textoUpperP1.includes("CONDUTOR") ||
+      (textoUpperP1.includes("CPF") && textoPagina1.length > 200);
 
-    if (!temConteudoValido) {
-      // A tela não tem erro explícito, mas também não tem conteúdo de certidão
-      // Pode ser uma página em branco ou com conteúdo inesperado
-      console.warn("[DETRAN] Tela sem conteúdo reconhecível de certidão.");
-      console.warn(`[DETRAN] Texto completo: ${textoTela.substring(0, 500)}`);
+    if (!temConteudoMinimo) {
+      console.warn("[DETRAN] Página sem conteúdo reconhecível.");
+      throw new Error("DETRAN_FAIL: O site não retornou um resultado válido. Tente novamente.");
+    }
 
-      // Verifica se pelo menos tem algo que pareça um resultado
-      const temAlgumResultado =
-        textoUpper.includes("CPF") &&
-        textoUpper.includes("CNH") &&
-        textoTela.length > 200;
+    console.log("[DETRAN] Página 1 validada!");
 
-      if (!temAlgumResultado) {
-        throw new Error(
-          "DETRAN_FAIL: O site não retornou um resultado válido. Tente novamente."
-        );
+    // ── Screenshot da Página 1 ──
+    console.log("[DETRAN] Capturando screenshot da Página 1...");
+    const screenshotPag1 = await page.screenshot({ fullPage: true, type: "png" });
+
+    // ============================================================
+    // 7. CLICAR NO "EXTRATO COMPLETO" (Página 2)
+    // ============================================================
+    console.log("[DETRAN] Procurando link do Extrato Completo...");
+    let clicouExtrato = false;
+    let screenshotPag2 = null;
+    let textoExtrato = "";
+
+    // Tenta encontrar o link/botão de extrato completo
+    // Pode ser um <a>, <button>, ou <input> com texto variado
+    const seletoresExtrato = [
+      'a:has-text("EXTRATO COMPLETO")',
+      'a:has-text("EMITIR EXTRATO")',
+      'a:has-text("CLIQUE AQUI")',
+      'a:has-text("extrato completo")',
+      'a:has-text("emitir extrato")',
+      'a:has-text("clique aqui")',
+      'button:has-text("EXTRATO")',
+      'input[value*="EXTRATO" i]',
+      'a[href*="extrato" i]',
+    ];
+
+    for (const seletor of seletoresExtrato) {
+      try {
+        const elemento = await page.$(seletor);
+        if (elemento) {
+          const isVisible = await elemento.isVisible();
+          if (isVisible) {
+            console.log(`[DETRAN] Link de extrato encontrado: ${seletor}`);
+            await elemento.click();
+            clicouExtrato = true;
+            break;
+          }
+        }
+      } catch (e) {
+        // Seletor não encontrou, tenta o próximo
       }
     }
 
-    console.log("[DETRAN] Resultado validado! Tela contém certidão.");
+    // Fallback: busca por texto no innerText de todos os links
+    if (!clicouExtrato) {
+      console.log("[DETRAN] Tentando fallback: busca por texto nos links...");
+      clicouExtrato = await page.evaluate(() => {
+        const links = document.querySelectorAll("a, button, span, div");
+        for (const el of links) {
+          const txt = (el.innerText || el.textContent || "").toUpperCase();
+          if (
+            txt.includes("EXTRATO COMPLETO") ||
+            txt.includes("EMITIR EXTRATO") ||
+            txt.includes("CLIQUE AQUI PARA EMITIR")
+          ) {
+            el.click();
+            return true;
+          }
+        }
+        return false;
+      });
+    }
+
+    if (clicouExtrato) {
+      console.log("[DETRAN] Clicou no Extrato Completo! Aguardando Página 2...");
+
+      // Espera a página 2 carregar
+      await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {
+        console.log("[DETRAN] NetworkIdle timeout na Página 2");
+      });
+      await page.waitForTimeout(2000);
+
+      // Captura texto e screenshot da Página 2
+      textoExtrato = await page.evaluate(() => document.body.innerText);
+      console.log(`[DETRAN] Texto Extrato (200 chars): ${textoExtrato.substring(0, 200)}...`);
+
+      screenshotPag2 = await page.screenshot({ fullPage: true, type: "png" });
+      console.log("[DETRAN] Screenshot da Página 2 capturado!");
+    } else {
+      console.log("[DETRAN] Link de extrato NÃO encontrado. Usando apenas Página 1.");
+    }
 
     // ============================================================
-    // 7. ANÁLISE DOS DADOS DA CERTIDÃO (do HTML, antes do PDF)
+    // 8. CLASSIFICAR A SITUAÇÃO (5 Cenários)
     // ============================================================
-    console.log("[DETRAN] Analisando dados da certidão...");
-    const analise = analisarTextoCertidao(textoTela);
-    console.log(`[DETRAN] Status: ${analise.status} | Motivo: ${analise.motivo}`);
+    // Usa o texto mais completo disponível (Página 2 se existir, senão Página 1)
+    const textoParaAnalise = textoExtrato.length > 100 ? textoExtrato : textoPagina1;
+    // Combina ambos os textos para não perder informação
+    const textoCompleto = textoPagina1 + "\n" + textoExtrato;
+
+    console.log("[DETRAN] Classificando situação da CNH...");
+    const analise = classificarCertidao(textoCompleto);
+
+    console.log(`[DETRAN] ═══ RESULTADO FINAL ═══`);
+    console.log(`[DETRAN] Status: ${analise.status}`);
+    console.log(`[DETRAN] Motivo: ${analise.motivo}`);
+    console.log(`[DETRAN] Multas: ${analise.temMultas} | Suspensão: ${analise.temSuspensao} | Cassação: ${analise.temCassacao}`);
     if (analise.nome) console.log(`[DETRAN] Nome: ${analise.nome}`);
-    if (analise.numeroCertidao) console.log(`[DETRAN] Nº Certidão: ${analise.numeroCertidao}`);
 
     // ============================================================
-    // 8. GERAÇÃO DO PDF (via Screenshot — renderiza perfeitamente)
+    // 9. GERAÇÃO DO PDF (Screenshot de ambas as páginas)
     // ============================================================
-    console.log("[DETRAN] Gerando PDF visual (screenshot)...");
-    const screenshot = await page.screenshot({ fullPage: true, type: "png" });
-
+    console.log("[DETRAN] Gerando PDF...");
     const pdfDoc = await PDFDocument.create();
-    const pngImage = await pdfDoc.embedPng(screenshot);
 
-    // Cria página do tamanho da imagem
-    const pagePdf = pdfDoc.addPage([pngImage.width, pngImage.height]);
-    pagePdf.drawImage(pngImage, {
-      x: 0,
-      y: 0,
-      width: pngImage.width,
-      height: pngImage.height,
-    });
+    // Página 1 do PDF
+    const img1 = await pdfDoc.embedPng(screenshotPag1);
+    const pag1 = pdfDoc.addPage([img1.width, img1.height]);
+    pag1.drawImage(img1, { x: 0, y: 0, width: img1.width, height: img1.height });
+
+    // Página 2 do PDF (se existir)
+    if (screenshotPag2) {
+      const img2 = await pdfDoc.embedPng(screenshotPag2);
+      const pag2 = pdfDoc.addPage([img2.width, img2.height]);
+      pag2.drawImage(img2, { x: 0, y: 0, width: img2.width, height: img2.height });
+    }
 
     const pdfBytes = await pdfDoc.save();
     const pdfBuffer = Buffer.from(pdfBytes);
 
-    console.log(`[DETRAN] PDF gerado com sucesso! (${(pdfBuffer.length / 1024).toFixed(1)} KB)`);
+    console.log(`[DETRAN] PDF gerado! ${screenshotPag2 ? "2 páginas" : "1 página"} (${(pdfBuffer.length / 1024).toFixed(1)} KB)`);
     console.log("[DETRAN] ========================================");
     console.log("[DETRAN] Automação concluída com sucesso!");
     console.log("[DETRAN] ========================================");
 
     // ============================================================
-    // 9. RETORNO — Objeto completo para o api.js
+    // 10. RETORNO
     // ============================================================
     return {
       pdfBuffer,
@@ -432,12 +543,10 @@ export async function emitirCertidaoPDF(cpf, cnh) {
   } catch (error) {
     console.error(`[DETRAN] ERRO: ${error.message}`);
 
-    // Se o erro já é um DETRAN_FAIL, propaga direto
     if (error.message.includes("DETRAN_FAIL")) {
       throw error;
     }
 
-    // Para outros erros (timeout, crash, etc.), encapsula como DETRAN_FAIL
     throw new Error(`DETRAN_FAIL: ${error.message}`);
 
   } finally {
