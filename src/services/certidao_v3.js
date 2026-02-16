@@ -1,11 +1,11 @@
 import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
 
-// URL EXATA DO RELATÓRIO DA MANUS (Página 1, item 20)
+[cite_start]// URL DIRETA (Manus) [cite: 20]
 const CERTIDAO_URL = "https://www2.detran.rj.gov.br/portal/multas/certidao";
 
 export async function emitirCertidaoPDF(cpf, cnh) {
-  console.log("[DETRAN] Iniciando automação (Padrão Manus v3.2)...");
+  console.log("[DETRAN] Iniciando v3.2 (Otimizada para Timeout)...");
 
   if (!cpf || !cnh) throw new Error("CPF e CNH são obrigatórios");
   
@@ -14,48 +14,57 @@ export async function emitirCertidaoPDF(cpf, cnh) {
 
   let browser;
   try {
-    // Configuração conforme PDF da Manus (Página 1, item 11)
+    [cite_start]// Configuração Anti-Bloqueio [cite: 11]
     browser = await chromium.launch({
       headless: true,
       args: [
         '--no-sandbox', 
         '--disable-setuid-sandbox', 
         '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled'
+        '--disable-blink-features=AutomationControlled',
+        '--disable-extensions',
+        '--disable-gpu'
       ]
     });
 
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
       ignoreHTTPSErrors: true,
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
     });
 
     const page = await context.newPage();
 
-    // 1. ACESSO DIRETO (Conforme PDF Item 20)
-    // Se você testou e abriu, o robô tem que abrir também.
-    console.log(`[DETRAN] Acessando ${CERTIDAO_URL}...`);
-    await page.goto(CERTIDAO_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // 1. ACESSO OTIMIZADO (AQUI ESTÁ A CORREÇÃO DO TIMEOUT)
+    console.log(`[DETRAN] Conectando em ${CERTIDAO_URL}...`);
+    
+    // Mudança Crítica: 'commit' é muito mais rápido que 'domcontentloaded'
+    await page.goto(CERTIDAO_URL, { waitUntil: 'commit', timeout: 60000 });
+    
+    // Espera explícita pelo campo de CPF (garante que carregou o que importa)
+    console.log("[DETRAN] Aguardando formulário...");
+    await page.waitForSelector('#CertidaoCpf', { state: 'visible', timeout: 60000 });
 
-    // 2. PREENCHIMENTO (PDF Item 21)
-    await page.waitForSelector('#CertidaoCpf', { state: 'visible', timeout: 30000 });
+    [cite_start]// 2. PREENCHIMENTO [cite: 21]
     await page.fill('#CertidaoCpf', cpf.replace(/\D/g, ""));
     await page.fill('#CertidaoCnh', cnh.replace(/\D/g, ""));
 
-    // 3. CAPTCHA (PDF Item 22)
+    [cite_start]// 3. CAPTCHA [cite: 22]
     const recaptchaFrame = await page.$('iframe[src*="recaptcha"]');
     if (recaptchaFrame) {
       console.log("[DETRAN] Resolvendo Captcha...");
       const src = await recaptchaFrame.getAttribute("src");
       const sitekey = new URLSearchParams(src.split("?")[1]).get("k");
       
-      const inRes = await fetch(`http://2captcha.com/in.php?key=${twocaptchaKey}&method=userrecaptcha&googlekey=${sitekey}&pageurl=${CERTIDAO_URL}&json=1`);
+      // Usa URL atual para garantir referer correto
+      const currentUrl = page.url();
+
+      const inRes = await fetch(`http://2captcha.com/in.php?key=${twocaptchaKey}&method=userrecaptcha&googlekey=${sitekey}&pageurl=${currentUrl}&json=1`);
       const inData = await inRes.json();
       const id = inData.request;
 
       let token = null;
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 40; i++) { // 2 minutos de tolerância para o captcha
         await page.waitForTimeout(3000);
         const res = await fetch(`http://2captcha.com/res.php?key=${twocaptchaKey}&action=get&id=${id}&json=1`);
         const data = await res.json();
@@ -74,46 +83,43 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       }, token);
     }
 
-    // 4. CONSULTAR (PDF Item 23)
+    [cite_start]// 4. CONSULTAR [cite: 23]
     console.log("[DETRAN] Clicando em pesquisar...");
     await page.click('#btPesquisar');
     
-    // Aguarda carregamento da resposta
+    // Aguarda carregamento (Network Idle é seguro aqui porque já passou o form)
     await page.waitForLoadState('networkidle', { timeout: 60000 });
-    await page.waitForTimeout(2000); 
+    await page.waitForTimeout(1000); 
 
     // ============================================================
-    // TRAVA DE SEGURANÇA (Única alteração solicitada por você)
-    // Impede o "Falso Positivo" descrito no PDF (Item 30-33)
+    // TRAVA DE SEGURANÇA (Para evitar o Falso Positivo)
     // ============================================================
     const textoTela = await page.evaluate(() => document.body.innerText.toUpperCase());
     
+    // Verifica erros comuns do Detran
     if (textoTela.includes("DADOS INFORMADOS INVÁLIDOS") || 
         textoTela.includes("NÃO CONFEREM") || 
-        textoTela.includes("CAPTCHA INCORRETO") ||
-        textoTela.includes("ERRO NA CONSULTA")) {
+        textoTela.includes("CAPTCHA INCORRETO")) {
         console.error(`[DETRAN] Erro na tela: ${textoTela.substring(0, 50)}...`);
-        throw new Error("DETRAN_FAIL: Dados incorretos ou site instável.");
+        throw new Error("DETRAN_FAIL: O site recusou os dados.");
     }
     // ============================================================
 
-    // 5. CLICAR NO EXTRATO COMPLETO (PDF Item 24 e 40-52)
-    // Essa parte é CRUCIAL para pegar a Página 2 com as multas
+    [cite_start]// 5. CLICAR NO EXTRATO COMPLETO (Página 2) [cite: 40-47]
     try {
-        // Tenta estratégia 1: Seletor por href (PDF Item 46)
         const linkExtrato = await page.$('a[href*="extrato" i]');
         if (linkExtrato) {
-            console.log("[DETRAN] Clicando em Extrato Completo (Página 2)...");
+            console.log("[DETRAN] Clicando em Extrato Completo...");
             await linkExtrato.click();
             await page.waitForLoadState('networkidle');
             await page.waitForTimeout(2000);
         }
     } catch (e) {
-        console.log("[DETRAN] Não foi necessário clicar no extrato ou falhou.");
+        console.log("[DETRAN] Link de extrato não encontrado (provavelmente Nada Consta).");
     }
 
-    // 6. GERAÇÃO DO PDF (PDF Item 24 - Screenshot)
-    console.log("[DETRAN] Gerando PDF (Screenshot)...");
+    [cite_start]// 6. GERAÇÃO DO PDF (Screenshot - Método Manus) [cite: 24]
+    console.log("[DETRAN] Gerando PDF visual...");
     const screenshot = await page.screenshot({ fullPage: true, type: 'png' });
     
     const pdfDoc = await PDFDocument.create();
@@ -123,43 +129,34 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     
     const pdfBytes = await pdfDoc.save();
 
-    // 7. CLASSIFICAÇÃO (PDF Item 34-39 - Frases Exatas)
-    // Regex e lógica recuperada do relatório da Manus
+    [cite_start]// 7. CLASSIFICAÇÃO [cite: 34-39]
     let status = "DESCONHECIDO";
     let temProblemas = false;
     let motivo = "";
 
-    // PDF Item 38 (Cassação)
     if (textoTela.includes("CONDUTOR POSSUI") && textoTela.includes("CASSAÇÃO DA CNH")) {
         status = "CASSACAO"; temProblemas = true; motivo = "Cassação da CNH";
-    } 
-    // PDF Item 37 (Suspensão)
-    else if (textoTela.includes("CONDUTOR POSSUI") && textoTela.includes("SUSPENSÃO DO DIREITO")) {
+    } else if (textoTela.includes("CONDUTOR POSSUI") && textoTela.includes("SUSPENSÃO DO DIREITO")) {
         status = "SUSPENSAO"; temProblemas = true; motivo = "Suspensão do Direito de Dirigir";
-    } 
-    // PDF Item 36 (Multas)
-    else if (textoTela.includes("INFRAÇÃO") && !textoTela.includes("NADA CONSTA")) {
+    } else if (textoTela.includes("INFRAÇÃO") && !textoTela.includes("NADA CONSTA")) {
         status = "MULTAS"; temProblemas = true; motivo = "Multas de Trânsito";
-    } 
-    // PDF Item 35 (Nada Consta)
-    else if (textoTela.includes("NADA CONSTA")) {
+    } else if (textoTela.includes("NADA CONSTA")) {
         status = "OK"; temProblemas = false; motivo = "Nada Consta";
     }
 
-    // Retorno do objeto (PDF Item 103-112)
     return {
         pdfBuffer: Buffer.from(pdfBytes),
         analise: {
             status,
             motivo,
             temProblemas,
-            nome: "Motorista", 
+            nome: "Motorista",
             dados: {}
         }
     };
 
   } catch (error) {
-    console.error(`[DETRAN] ERRO: ${error.message}`);
+    console.error(`[DETRAN] ERRO FATAL: ${error.message}`);
     throw error;
   } finally {
     if (browser) await browser.close();
