@@ -266,7 +266,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
     });
 
-    const page = await context.newPage();
+    let page = await context.newPage();
 
     // ============================================================
     // 2. ACESSO DIRETO A URL DO FORMULARIO
