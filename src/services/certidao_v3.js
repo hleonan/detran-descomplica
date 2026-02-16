@@ -127,6 +127,19 @@ function classificarCertidao(textoCompleto) {
   // CLASSIFICACAO USANDO FRASES EXATAS DO DETRAN
   // ============================================================
 
+  // -- Funcao auxiliar: Detecta se ha multas/infracoes nos ultimos 5 anos --
+  const detectarMultas = (texto) => {
+    const textoUp = texto.toUpperCase();
+    return (
+      textoUp.includes("TODAS AS INFRACOES - 5 ANOS") ||
+      textoUp.includes("MULTAS (") ||
+      /QTD DE AUTOS[^\d]*\d+/.test(textoUp) ||
+      /TODAS AS INFRACOES[^\d]*\d+/.test(textoUp)
+    );
+  };
+
+  const temMultasDetectadas = detectarMultas(textoCompleto);
+
   // -- 1. NADA CONSTA (frase exata) --
   if (textoUpper.includes("NADA CONSTA, NO SISTEMA DE INFRA")) {
     analise.status = "OK";
@@ -145,7 +158,7 @@ function classificarCertidao(textoCompleto) {
       analise.temProblemas = true;
       analise.temCassacao = true;
       analise.temSuspensao = true; // Cassacao sempre vem com suspensao
-      analise.temMultas = true;
+      analise.temMultas = temMultasDetectadas; // Verifica se ha multas visiveis
       analise.motivo =
         "Sua CNH esta em risco de cassacao. Isso significa que voce pode perder sua habilitacao e precisar iniciar um novo processo do zero. Nossa equipe pode te ajudar a reverter essa situacao.";
       console.log(`[CLASSIFICACAO] ? CASSACAO (${numCassacao} processo(s))`);
@@ -161,7 +174,7 @@ function classificarCertidao(textoCompleto) {
       analise.status = "SUSPENSAO";
       analise.temProblemas = true;
       analise.temSuspensao = true;
-      analise.temMultas = true;
+      analise.temMultas = temMultasDetectadas; // Verifica se ha multas visiveis
       analise.motivo =
         "Sua CNH esta em risco iminente de suspensao. Identificamos um processo de suspensao do direito de dirigir. Nossa equipe pode te ajudar a resolver antes que seja tarde.";
       console.log(`[CLASSIFICACAO] ? SUSPENSAO (${numSuspensao} processo(s))`);
