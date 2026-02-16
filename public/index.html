@@ -1494,7 +1494,7 @@
           }
 
           // ========================================================
-          // SUCESSO
+          // SUCESSO — 4 CENÁRIOS NA TELA 3
           // ========================================================
           if(loadingInterval) clearInterval(loadingInterval);
           updateLoadingMessage("Consulta finalizada com sucesso!");
@@ -1509,29 +1509,37 @@
           const btnSecondary = document.getElementById("btn-result-secondary");
           const nomeMotorista = data.nome ? `<strong>${data.nome}</strong>` : "Motorista";
 
-          if (data.temProblemas) {
-            // COM OCORRÊNCIA
-            icon.innerText = "⚠️";
-            title.innerText = "ATENÇÃO: FORAM ENCONTRADAS OCORRÊNCIAS";
-            title.style.color = "#FF4B2B";
+          // Salva caseId para uso posterior
+          window.__lastCaseId = data.caseId;
+
+          // ── CENÁRIO 4: MULTAS + SUSPENSÃO + CASSAÇÃO ──
+          if (data.status === "CASSACAO" || data.temCassacao) {
+            icon.innerText = "🚨";
+            title.innerText = "ALERTA MÁXIMO: RISCO DE CASSAÇÃO DA CNH";
+            title.style.color = "#B71C1C";
             
             msg.innerHTML = `
               <div style="text-align: left; max-width: 550px; margin: 0 auto;">
                 <p style="font-size: 18px; margin-bottom: 15px;">
-                  ${nomeMotorista}, identificamos <strong style="color: #FF4B2B;">pendências</strong> no seu prontuário.
+                  ${nomeMotorista}, a situação da sua CNH é <strong style="color: #B71C1C;">crítica</strong>.
                 </p>
-                <p style="font-size: 16px; color: #555; margin-bottom: 15px;">
-                  <strong>Motivo:</strong> ${data.motivo || "Restrição identificada."}
-                </p>
+                <div style="background: #FFEBEE; border-left: 5px solid #B71C1C; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <p style="font-size: 15px; color: #B71C1C; margin: 0; font-weight: bold;">
+                    Foi identificado um processo de CASSAÇÃO da sua habilitação.
+                  </p>
+                  <p style="font-size: 14px; color: #C62828; margin-top: 8px;">
+                    Isso significa que você pode <strong>perder sua CNH definitivamente</strong> e precisar iniciar um novo processo de habilitação do zero — como se nunca tivesse tirado carteira.
+                  </p>
+                </div>
                 <div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 15px; border-radius: 8px;">
                   <p style="font-size: 14px; color: #856404; margin: 0;">
-                    Isso pode levar à <strong>suspensão do direito de dirigir</strong>.
+                    <strong>Ainda há tempo de agir!</strong> Nossa equipe especializada pode analisar seu caso e buscar alternativas legais para reverter essa situação.
                   </p>
                 </div>
               </div>`;
             
-            btnAction.innerText = "FALAR COM ESPECIALISTA AGORA";
-            btnAction.style.background = "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)";
+            btnAction.innerText = "CLIQUE PARA CONTINUAR";
+            btnAction.style.background = "linear-gradient(135deg, #B71C1C 0%, #D32F2F 100%)";
             btnAction.onclick = () => goToScreen4();
 
             btnSecondary.style.display = "block";
@@ -1541,8 +1549,82 @@
                 if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
             };
 
+          // ── CENÁRIO 3: MULTAS + SUSPENSÃO ──
+          } else if (data.status === "SUSPENSAO" || data.temSuspensao) {
+            icon.innerText = "⚠️";
+            title.innerText = "ATENÇÃO: SUA CNH ESTÁ EM RISCO IMINENTE";
+            title.style.color = "#E65100";
+            
+            msg.innerHTML = `
+              <div style="text-align: left; max-width: 550px; margin: 0 auto;">
+                <p style="font-size: 18px; margin-bottom: 15px;">
+                  ${nomeMotorista}, identificamos uma situação <strong style="color: #E65100;">grave</strong> no seu prontuário.
+                </p>
+                <div style="background: #FFF3E0; border-left: 5px solid #E65100; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <p style="font-size: 15px; color: #E65100; margin: 0; font-weight: bold;">
+                    Processo de SUSPENSÃO do direito de dirigir identificado.
+                  </p>
+                  <p style="font-size: 14px; color: #BF360C; margin-top: 8px;">
+                    Sua CNH pode ser suspensa a qualquer momento. Além das multas, há um processo administrativo em andamento que precisa de atenção urgente.
+                  </p>
+                </div>
+                <div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 15px; border-radius: 8px;">
+                  <p style="font-size: 14px; color: #856404; margin: 0;">
+                    <strong>Podemos te ajudar!</strong> Nossa equipe pode apresentar defesa e recurso para evitar a suspensão da sua CNH.
+                  </p>
+                </div>
+              </div>`;
+            
+            btnAction.innerText = "CLIQUE PARA CONTINUAR";
+            btnAction.style.background = "linear-gradient(135deg, #E65100 0%, #FF6D00 100%)";
+            btnAction.onclick = () => goToScreen4();
+
+            btnSecondary.style.display = "block";
+            btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
+            btnSecondary.style.background = "#6c757d";
+            btnSecondary.onclick = () => {
+                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+            };
+
+          // ── CENÁRIO 2: SÓ MULTAS ──
+          } else if (data.status === "MULTAS" || data.temMultas) {
+            icon.innerText = "📋";
+            title.innerText = "ATENÇÃO: MULTAS IDENTIFICADAS";
+            title.style.color = "#FF6F00";
+            
+            msg.innerHTML = `
+              <div style="text-align: left; max-width: 550px; margin: 0 auto;">
+                <p style="font-size: 18px; margin-bottom: 15px;">
+                  ${nomeMotorista}, identificamos <strong style="color: #FF6F00;">multas</strong> no seu prontuário.
+                </p>
+                <div style="background: #FFF8E1; border-left: 5px solid #FF6F00; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <p style="font-size: 15px; color: #E65100; margin: 0; font-weight: bold;">
+                    Multas acumuladas podem gerar um processo de suspensão da CNH.
+                  </p>
+                  <p style="font-size: 14px; color: #BF360C; margin-top: 8px;">
+                    Se o acúmulo de pontos ultrapassar o limite, você poderá ter o direito de dirigir suspenso. É importante agir antes que isso aconteça.
+                  </p>
+                </div>
+                <div style="background: #E8F5E9; border-left: 4px solid #4CAF50; padding: 15px; border-radius: 8px;">
+                  <p style="font-size: 14px; color: #2E7D32; margin: 0;">
+                    <strong>A boa notícia:</strong> nossa equipe pode te ajudar a recorrer das multas e evitar a suspensão.
+                  </p>
+                </div>
+              </div>`;
+            
+            btnAction.innerText = "CLIQUE PARA CONTINUAR";
+            btnAction.style.background = "linear-gradient(135deg, #FF6F00 0%, #FFA000 100%)";
+            btnAction.onclick = () => goToScreen4();
+
+            btnSecondary.style.display = "block";
+            btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
+            btnSecondary.style.background = "#6c757d";
+            btnSecondary.onclick = () => {
+                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+            };
+
+          // ── CENÁRIO 5: NADA CONSTA ──
           } else {
-            // NADA CONSTA
             icon.innerText = "✅";
             title.innerText = "PARABÉNS! SUA CNH ESTÁ LIMPA";
             title.style.color = "#28A745";
@@ -1550,24 +1632,27 @@
             msg.innerHTML = `
               <div style="text-align: left; max-width: 550px; margin: 0 auto;">
                 <p style="font-size: 18px; margin-bottom: 15px;">
-                  ${nomeMotorista}, não encontramos irregularidades.
+                  ${nomeMotorista}, não encontramos nenhuma ocorrência no seu prontuário.
                 </p>
-                <div style="background: #D4EDDA; border-left: 4px solid #28A745; padding: 15px; border-radius: 8px;">
-                  <p style="font-size: 14px; color: #155724; margin: 0;">
-                    <strong>Certidão de Nada Consta</strong> emitida com sucesso!
-                    ${data.numeroCertidao ? '<br>Nº: ' + data.numeroCertidao : ''}
+                <div style="background: #D4EDDA; border-left: 5px solid #28A745; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <p style="font-size: 15px; color: #155724; margin: 0; font-weight: bold;">
+                    Certidão de Nada Consta emitida com sucesso!
+                    ${data.numeroCertidao ? '<br><span style="font-weight: normal;">Nº da Certidão: ' + data.numeroCertidao + '</span>' : ''}
                   </p>
                 </div>
+                <p style="font-size: 15px; color: #555; margin-top: 10px;">
+                  Você pode baixar sua certidão ou explorar outros serviços disponíveis.
+                </p>
               </div>`;
             
-            btnAction.innerText = "BAIXAR CERTIDÃO (PDF)";
+            btnAction.innerText = "BAIXAR CERTIDÃO NADA CONSTA (PDF)";
             btnAction.style.background = "linear-gradient(135deg, #28A745 0%, #20c997 100%)";
             btnAction.onclick = () => {
                 if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
             };
 
             btnSecondary.style.display = "block";
-            btnSecondary.innerText = "EXPLORAR MAIS SERVIÇOS";
+            btnSecondary.innerText = "CONSULTAR OUTROS SERVIÇOS";
             btnSecondary.style.background = "#003D7A";
             btnSecondary.onclick = () => goToScreen5();
           }

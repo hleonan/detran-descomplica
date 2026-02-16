@@ -200,6 +200,9 @@ function classificarCertidao(textoCompleto) {
     console.warn("[CLASSIFICAÇÃO] ⚠️ Não foi possível classificar o documento.");
   }
 
+  console.log(`[CLASSIFICAÇÃO] Status: ${analise.status}`);
+  console.log(`[CLASSIFICAÇÃO] Multas: ${temMultas} | Suspensão: ${temSuspensao} | Cassação: ${temCassacao} | Nada Consta: ${temNadaConsta}`);
+
   return analise;
 }
 
