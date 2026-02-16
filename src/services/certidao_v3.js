@@ -519,10 +519,22 @@ export async function emitirCertidaoPDF(cpf, cnh) {
 
       if (clicouExtrato) {
         console.log("[DETRAN] Aguardando carregamento da Pagina 2...");
+        
+        // Verifica se uma nova aba foi aberta
+        await page.waitForTimeout(2000); // Aguarda 2s para nova aba abrir
+        const pages = context.pages();
+        console.log(`[DETRAN] Total de abas abertas: ${pages.length}`);
+        
+        if (pages.length > 1) {
+          console.log("[DETRAN] Nova aba detectada! Mudando para a nova aba...");
+          page = pages[pages.length - 1]; // Muda para a ultima aba aberta
+          await page.bringToFront();
+        }
+        
         await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
           console.log("[DETRAN] NetworkIdle timeout na Pagina 2");
         });
-        await page.waitForTimeout(5000); // Aumentado de 3s para 5s
+        await page.waitForTimeout(3000);
 
         // Captura texto e screenshot da Pagina 2
         textoExtrato = await page.evaluate(() => document.body.innerText);
