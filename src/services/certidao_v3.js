@@ -137,7 +137,7 @@ function classificarCertidao(textoCompleto) {
   }
 
   // -- 2. CASSACAO (verifica numero > 0) --
-  const cassacaoMatch = textoUpper.match(/CONDUTOR POSSUI (\d+) PENALIDADE\(S\) DE CASSACAO/);
+  const cassacaoMatch = textoUpper.match(/CONDUTOR POSSUI (\d+) PENALIDADE\(S\) DE CASSA[CÇ][AÃ]O/);
   if (cassacaoMatch) {
     const numCassacao = parseInt(cassacaoMatch[1], 10);
     if (numCassacao > 0) {
@@ -154,7 +154,7 @@ function classificarCertidao(textoCompleto) {
   }
 
   // -- 3. SUSPENSAO (verifica numero > 0) --
-  const suspensaoMatch = textoUpper.match(/CONDUTOR POSSUI (\d+) PENALIDADE\(S\) DE SUSPENSAO/);
+  const suspensaoMatch = textoUpper.match(/CONDUTOR POSSUI (\d+) PENALIDADE\(S\) DE SUSPENS[AÃ]O/);
   if (suspensaoMatch) {
     const numSuspensao = parseInt(suspensaoMatch[1], 10);
     if (numSuspensao > 0) {
@@ -467,17 +467,23 @@ export async function emitirCertidaoPDF(cpf, cnh) {
 
       if (clicouExtrato) {
         console.log("[DETRAN] Aguardando carregamento da Pagina 2...");
-        await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {
+        await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
           console.log("[DETRAN] NetworkIdle timeout na Pagina 2");
         });
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(5000); // Aumentado de 3s para 5s
 
         // Captura texto e screenshot da Pagina 2
         textoExtrato = await page.evaluate(() => document.body.innerText);
         console.log(`[DETRAN] Texto Extrato (200 chars): ${textoExtrato.substring(0, 200)}...`);
 
-        screenshotPag2 = await page.screenshot({ fullPage: true, type: "png" });
-        console.log("[DETRAN] ? Screenshot da Pagina 2 capturado!");
+        // Verifica se a pagina 2 e diferente da pagina 1
+        if (textoExtrato.length > textoPagina1.length * 1.2) {
+          screenshotPag2 = await page.screenshot({ fullPage: true, type: "png" });
+          console.log("[DETRAN] ? Screenshot da Pagina 2 capturado!");
+        } else {
+          console.warn("[DETRAN] ? Pagina 2 parece identica a Pagina 1. Ignorando...");
+          screenshotPag2 = null;
+        }
       } else {
         console.warn("[DETRAN] ? Nao conseguiu clicar no link de extrato. Usando apenas Pagina 1.");
       }
