@@ -429,6 +429,17 @@ export async function emitirCertidaoPDF(cpf, cnh) {
 
     if (temLinkExtrato) {
       console.log("[DETRAN] Link de extrato detectado no texto. Tentando clicar...");
+      
+      // Log de debug: Listar todos os links da pagina
+      const todosLinks = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('a')).map(a => ({
+          text: (a.innerText || a.textContent || '').substring(0, 50),
+          href: a.href,
+          visible: a.offsetParent !== null
+        }));
+      });
+      console.log(`[DETRAN] Total de links na pagina: ${todosLinks.length}`);
+      console.log('[DETRAN] Links encontrados:', JSON.stringify(todosLinks.slice(0, 5), null, 2));
 
       // Estrategia 1: Procurar por texto exato em links
       try {
@@ -475,6 +486,34 @@ export async function emitirCertidaoPDF(cpf, cnh) {
         });
         if (clicouExtrato) {
           console.log("[DETRAN] ? Clicou via JavaScript");
+        }
+      }
+
+      // Estrategia 4: Procurar por imagem clicavel (area/map)
+      if (!clicouExtrato) {
+        try {
+          const imgLink = await page.$('img[usemap], area[alt*="CLIQUE" i], area[alt*="EXTRATO" i]');
+          if (imgLink) {
+            await imgLink.click();
+            clicouExtrato = true;
+            console.log("[DETRAN] ? Clicou via imagem/area");
+          }
+        } catch (e) {
+          console.log("[DETRAN] Estrategia 4 falhou, tentando proxima...");
+        }
+      }
+
+      // Estrategia 5: Clicar na posicao da imagem (coordenadas)
+      if (!clicouExtrato) {
+        try {
+          const imgExtrato = await page.$('img[alt*="CLIQUE" i], img[title*="EXTRATO" i]');
+          if (imgExtrato) {
+            await imgExtrato.click();
+            clicouExtrato = true;
+            console.log("[DETRAN] ? Clicou via imagem direta");
+          }
+        } catch (e) {
+          console.log("[DETRAN] Estrategia 5 falhou.");
         }
       }
 
