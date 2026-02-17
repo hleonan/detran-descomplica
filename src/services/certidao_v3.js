@@ -130,11 +130,23 @@ function classificarCertidao(textoCompleto) {
   // -- Funcao auxiliar: Detecta se ha multas/infracoes nos ultimos 5 anos --
   const detectarMultas = (texto) => {
     const textoUp = texto.toUpperCase();
+    
+    // Verifica se ha tabela de infracoes com numeros > 0
+    const tabelaMatch = textoUp.match(/TODAS AS INFRACOES - 5 ANOS[\s\S]{0,200}?(\d+)/);
+    if (tabelaMatch) {
+      const numInfracoes = parseInt(tabelaMatch[1], 10);
+      if (numInfracoes > 0) {
+        console.log(`[DETECCAO MULTAS] Encontradas ${numInfracoes} infracoes na tabela`);
+        return true;
+      }
+    }
+    
+    // Verifica padroes alternativos
     return (
       textoUp.includes("TODAS AS INFRACOES - 5 ANOS") ||
       textoUp.includes("MULTAS (") ||
-      /QTD DE AUTOS[^\d]*\d+/.test(textoUp) ||
-      /TODAS AS INFRACOES[^\d]*\d+/.test(textoUp)
+      /QTD DE AUTOS[\s\S]{0,50}(\d+)/.test(textoUp) ||
+      /TODAS AS INFRACOES[\s\S]{0,50}(\d+)/.test(textoUp)
     );
   };
 
@@ -187,12 +199,7 @@ function classificarCertidao(textoCompleto) {
     textoUpper.includes("CONDUTOR NAO POSSUI PENALIDADE DE SUSPENSAO") ||
     textoUpper.includes("NENHUM REGISTRO ENCONTRADO PARA PENALIDADES DE SUSPENSAO");
 
-  const temInfracoes =
-    textoUpper.includes("TODAS AS INFRACOES - 5 ANOS") ||
-    textoUpper.includes("MULTAS (") ||
-    /QTD DE AUTOS[^\d]*\d+/.test(textoUpper);
-
-  if (temMultasTexto && temInfracoes) {
+  if (temMultasTexto && temMultasDetectadas) {
     analise.status = "MULTAS";
     analise.temProblemas = true;
     analise.temMultas = true;
