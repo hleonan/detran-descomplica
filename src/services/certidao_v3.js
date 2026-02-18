@@ -132,7 +132,7 @@ function classificarCertidao(textoCompleto) {
     const textoUp = texto.toUpperCase();
     
     // Verifica se ha tabela de infracoes com numeros > 0
-    const tabelaMatch = textoUp.match(/TODAS AS INFRACOES - 5 ANOS[\s\S]{0,200}?(\d+)/);
+    const tabelaMatch = textoUp.match(/TODAS AS INFRA[CÇ][OÕ]ES - 5 ANOS[\s\S]{0,200}?(\d+)/);
     if (tabelaMatch) {
       const numInfracoes = parseInt(tabelaMatch[1], 10);
       if (numInfracoes > 0) {
