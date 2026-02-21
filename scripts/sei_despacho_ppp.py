@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import unicodedata
 from datetime import datetime
 
 import gspread
@@ -44,6 +45,27 @@ def get_sheet():
 
     client = gspread.service_account(filename=creds_path)
     return client.open(SPREADSHEET_NAME).sheet1
+
+
+def normalizar_texto(valor):
+    texto = str(valor or "").strip()
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    return texto.upper()
+
+
+def normalizar_chave(valor):
+    texto = normalizar_texto(valor)
+    return re.sub(r"[^A-Z0-9]", "", texto)
+
+
+def obter_campo_flexivel(linha, *nomes):
+    mapa = {normalizar_chave(chave): valor for chave, valor in linha.items()}
+    for nome in nomes:
+        chave = normalizar_chave(nome)
+        if chave in mapa:
+            return mapa[chave]
+    return ""
 
 
 async def click_first_visible(container, selectors, timeout_ms=3000):
@@ -441,17 +463,43 @@ async def main():
     registros = sheet.get_all_records()
 
     alvos = []
-    for idx, linha in enumerate(registros):
-        numero = str(linha.get("processo_numero", "")).strip()
-        classificacao = str(linha.get("classificacao", "")).strip().upper()
-        acao_adm = str(linha.get("acao_adm", "")).strip().upper()
-        status_sei = str(linha.get("Status Sei", "")).strip().upper()
+    total_com_numero = 0
+    total_classificacao_ok = 0
+    total_acao_ok = 0
+    total_status_pendente = 0
 
-        if numero and classificacao == "RETORNO/TRAMITAÇÃO" and "CRIAR DESPACHO PARA PPP" in acao_adm:
+    for idx, linha in enumerate(registros):
+        numero = str(
+            obter_campo_flexivel(linha, "processo_numero", "processo", "numero_processo")
+        ).strip()
+        classificacao = normalizar_texto(
+            obter_campo_flexivel(linha, "classificacao", "classificação")
+        )
+        acao_adm = normalizar_texto(obter_campo_flexivel(linha, "acao_adm", "ação_adm", "acao adm"))
+        status_sei = normalizar_texto(obter_campo_flexivel(linha, "Status Sei", "Status SEI", "status"))
+
+        if numero:
+            total_com_numero += 1
+        if classificacao == "RETORNO/TRAMITACAO":
+            total_classificacao_ok += 1
+        if "CRIAR DESPACHO PARA PPP" in acao_adm:
+            total_acao_ok += 1
+        if "DESPACHO CRIADO" not in status_sei:
+            total_status_pendente += 1
+
+        if numero and classificacao == "RETORNO/TRAMITACAO" and "CRIAR DESPACHO PARA PPP" in acao_adm:
             if "DESPACHO CRIADO" not in status_sei:
                 alvos.append({"num": numero, "row_index": idx + 2})
 
     if not alvos:
+        print(
+            "[DEBUG] Filtro planilha -> "
+            f"total_linhas={len(registros)} | "
+            f"com_numero={total_com_numero} | "
+            f"classificacao_retorno={total_classificacao_ok} | "
+            f"acao_despacho={total_acao_ok} | "
+            f"status_pendente={total_status_pendente}"
+        )
         print("Nenhum processo pendente para Despacho PPP.")
         return
 
