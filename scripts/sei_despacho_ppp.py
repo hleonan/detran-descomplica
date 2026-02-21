@@ -58,6 +58,46 @@ async def click_first_visible(container, selectors, timeout_ms=3000):
     return False
 
 
+async def existe_ckeditor(contexto):
+    try:
+        return await contexto.evaluate(
+            """() => {
+                if (typeof CKEDITOR === 'undefined') return false;
+                return Object.keys(CKEDITOR.instances || {}).length > 0;
+            }"""
+        )
+    except Exception:
+        return False
+
+
+async def localizar_contexto_ckeditor(page, frame_referencia=None, timeout_ms=15000):
+    deadline = asyncio.get_event_loop().time() + (timeout_ms / 1000)
+
+    while asyncio.get_event_loop().time() < deadline:
+        if await existe_ckeditor(page):
+            return page
+
+        for popup in page.context.pages:
+            if popup.is_closed():
+                continue
+            if await existe_ckeditor(popup):
+                return popup
+
+        for frame in page.frames:
+            if frame.is_detached():
+                continue
+            if await existe_ckeditor(frame):
+                return frame
+
+        if frame_referencia and not frame_referencia.is_detached():
+            if await existe_ckeditor(frame_referencia):
+                return frame_referencia
+
+        await page.wait_for_timeout(300)
+
+    return None
+
+
 async def marcar_radio_resiliente(frame, seletor_input, seletor_label=None):
     radio = frame.locator(seletor_input).first
     await radio.wait_for(state="visible", timeout=15000)
@@ -212,23 +252,36 @@ async def salvar_editor_com_data(page, frame):
     editor = None
     botao_salvar = frame.locator(
         "button#btnSalvar, input#btnSalvar, button:has-text('Salvar'), input[value='Salvar']"
-    ).first
+    ).last
+
+    async def clicar_salvar_formulario():
+        try:
+            await botao_salvar.click(timeout=5000)
+        except Exception:
+            await botao_salvar.click(force=True, timeout=5000)
 
     try:
         async with page.context.expect_page(timeout=8000) as popup_info:
-            await botao_salvar.click()
+            await clicar_salvar_formulario()
         editor = await popup_info.value
         await editor.wait_for_load_state("domcontentloaded")
     except PlaywrightTimeoutError:
         # Fallback: alguns perfis abrem editor na mesma aba/frame em vez de popup.
-        await botao_salvar.click()
-        await page.wait_for_timeout(2500)
-        editor = page
+        await clicar_salvar_formulario()
+        await page.wait_for_timeout(2000)
+        editor = await localizar_contexto_ckeditor(page, frame_referencia=frame, timeout_ms=12000)
 
-    await editor.wait_for_function(
-        "typeof CKEDITOR !== 'undefined' && Object.keys(CKEDITOR.instances).length > 0",
-        timeout=15000,
-    )
+    if not editor:
+        # Em alguns cenários o SEI salva sem abrir editor textual.
+        print("[WARN] CKEditor não apareceu após Salvar; seguindo fluxo sem edição de data.")
+        return
+
+    if not await existe_ckeditor(editor):
+        editor = await localizar_contexto_ckeditor(page, frame_referencia=frame, timeout_ms=10000)
+
+    if not editor:
+        print("[WARN] Editor não detectado após clique em Salvar; documento pode já ter sido criado.")
+        return
 
     hoje = datetime.now().strftime("%d/%m/%Y")
     await editor.evaluate(
