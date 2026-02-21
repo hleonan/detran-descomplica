@@ -98,6 +98,47 @@ async def localizar_contexto_ckeditor(page, frame_referencia=None, timeout_ms=15
     return None
 
 
+async def tentar_abrir_editor_manual(page):
+    """Fallback para ambientes em que popup é bloqueado ao salvar o formulário."""
+    seletores_editor = [
+        "a[title*='Editar Conteúdo']",
+        "img[title*='Editar Conteúdo']",
+        "a[href*='documento_texto_editar']",
+        "a[href*='documento_visualizar']",
+        "a[href*='acao=documento_alterar_recebido']",
+        "a:has-text('Editar')",
+    ]
+
+    for frame in page.frames:
+        if frame.is_detached():
+            continue
+
+        for seletor in seletores_editor:
+            alvo = frame.locator(seletor).first
+            try:
+                if await alvo.count() == 0:
+                    continue
+                await alvo.wait_for(state="visible", timeout=1200)
+            except Exception:
+                continue
+
+            try:
+                async with page.context.expect_page(timeout=3000) as popup_info:
+                    await alvo.click()
+                popup = await popup_info.value
+                await popup.wait_for_load_state("domcontentloaded")
+                return popup
+            except PlaywrightTimeoutError:
+                try:
+                    await alvo.click(force=True)
+                    await page.wait_for_timeout(1500)
+                    return None
+                except Exception:
+                    continue
+
+    return None
+
+
 async def marcar_radio_resiliente(frame, seletor_input, seletor_label=None):
     radio = frame.locator(seletor_input).first
     await radio.wait_for(state="visible", timeout=15000)
@@ -270,6 +311,13 @@ async def salvar_editor_com_data(page, frame):
         await clicar_salvar_formulario()
         await page.wait_for_timeout(2000)
         editor = await localizar_contexto_ckeditor(page, frame_referencia=frame, timeout_ms=12000)
+
+    if not editor:
+        popup_manual = await tentar_abrir_editor_manual(page)
+        if popup_manual:
+            editor = popup_manual
+        else:
+            editor = await localizar_contexto_ckeditor(page, frame_referencia=frame, timeout_ms=7000)
 
     if not editor:
         # Em alguns cenários o SEI salva sem abrir editor textual.
