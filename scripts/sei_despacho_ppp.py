@@ -15,6 +15,7 @@ SEI_USER = os.getenv("SEI_USUARIO")
 SEI_PASS = os.getenv("SEI_SENHA")
 SEI_ORGAO = os.getenv("SEI_ORGAO", "RIOLUZ")
 HEADLESS = os.getenv("HEADLESS", "0") == "1"
+DEBUG_INSPECIONAR = os.getenv("SEI_DEBUG_INSPECIONAR", "1") == "1"
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME", "Controle SEI - Rioluz")
 CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
 
@@ -240,20 +241,67 @@ async def salvar_editor_com_data(page, frame):
         hoje,
     )
 
-    await click_first_visible(
+    clicou_salvar = await click_first_visible(
         editor,
         [
             "a[onclick*='salvar']",
             "img[title*='Salvar']",
+            "input[id*='Salvar']",
+            "a[id*='Salvar']",
             "button:has-text('Salvar')",
             "text=Salvar",
         ],
         timeout_ms=5000,
     )
 
+    if not clicou_salvar:
+        raise RuntimeError("Não foi possível acionar o botão Salvar no editor do SEI.")
+
     await editor.wait_for_timeout(2000)
     if editor != page and not editor.is_closed():
         await editor.close()
+
+
+async def inspecionar_pagina(page):
+    """Inspeciona os elementos principais do fluxo para debug operacional no SEI."""
+    if not DEBUG_INSPECIONAR:
+        return
+
+    print("[DEBUG] Inspecionando frames e elementos visíveis da página...")
+    seletores = [
+        "input#txtPesquisaRapida",
+        "img[title='Incluir Documento']",
+        "a[href*='documento_escolher_tipo']",
+        "input#txtFiltro",
+        "a:has-text('Despacho')",
+        "input#optProtocoloDocumentoTextoBase",
+        "input#txtProtocoloDocumentoTextoBase",
+        "input#txtDescricao",
+        "input#txtNomeArvore",
+        "input#optPublico",
+        "input#optPublicoInfra",
+        "button#btnSalvar",
+        "input#btnSalvar",
+    ]
+
+    for idx, frame in enumerate(page.frames):
+        if frame.is_detached():
+            continue
+
+        frame_nome = frame.name or "(sem nome)"
+        frame_url = frame.url or "(sem url)"
+        print(f"[DEBUG] Frame {idx}: {frame_nome} | {frame_url}")
+
+        for selector in seletores:
+            try:
+                total = await frame.locator(selector).count()
+                if total > 0:
+                    visiveis = await frame.locator(selector).evaluate_all(
+                        "els => els.filter(el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)).length"
+                    )
+                    print(f"    - {selector}: total={total}, visiveis={visiveis}")
+            except Exception:
+                continue
 
 
 async def processar_despacho_ppp(page, numero_processo):
@@ -264,6 +312,7 @@ async def processar_despacho_ppp(page, numero_processo):
         await pesquisa.fill(numero_processo)
         await pesquisa.press("Enter")
         await page.wait_for_timeout(2500)
+        await inspecionar_pagina(page)
 
         if not await localizar_e_clicar_incluir_documento(page):
             raise RuntimeError("Não foi possível clicar em 'Incluir Documento'.")
@@ -273,7 +322,9 @@ async def processar_despacho_ppp(page, numero_processo):
             raise RuntimeError("Frame de visualização não encontrado após incluir documento.")
 
         await abrir_despacho_no_frame(frame)
+        await inspecionar_pagina(page)
         await preencher_formulario_despacho(frame)
+        await inspecionar_pagina(page)
         await salvar_editor_com_data(page, frame)
 
         print("[OK] Despacho criado com sucesso.")
