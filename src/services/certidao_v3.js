@@ -392,7 +392,32 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     // 6. TRAVA DE SEGURANCA -- Validacao do Resultado (Pagina 1)
     // ============================================================
     console.log("[DETRAN] Validando resultado da consulta (Pagina 1)...");
-    const textoPagina1 = await page.evaluate(() => document.body.innerText);
+    let textoPagina1 = await page.evaluate(() => {
+      // Estrategia 1: innerText
+      let texto = document.body.innerText || '';
+      
+      // Estrategia 2: textContent (se innerText vazio)
+      if (texto.trim().length < 100) {
+        texto = document.body.textContent || '';
+      }
+      
+      // Estrategia 3: iframe (se ainda vazio)
+      if (texto.trim().length < 100) {
+        const iframes = document.querySelectorAll('iframe');
+        for (const iframe of iframes) {
+          try {
+            const iframeTexto = iframe.contentDocument?.body?.innerText || iframe.contentDocument?.body?.textContent || '';
+            if (iframeTexto.trim().length > texto.length) {
+              texto = iframeTexto;
+            }
+          } catch (e) {
+            // Ignorar iframes com CORS
+          }
+        }
+      }
+      
+      return texto;
+    });
     const textoUpperP1 = textoPagina1.toUpperCase();
 
     console.log(`[DETRAN] Texto P1 (200 chars): ${textoPagina1.substring(0, 200)}...`);
