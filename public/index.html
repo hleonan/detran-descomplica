@@ -1256,14 +1256,26 @@
       // ==========================================
       // MÁSCARA E VALIDAÇÃO DE CPF
       // ==========================================
+      function onlyDigits(value) {
+        return String(value || "").replace(/\D/g, "");
+      }
+
+      function sanitizeCNH(value) {
+        return onlyDigits(value).slice(0, 11);
+      }
+        
       document.getElementById("cpf")?.addEventListener("input", (e) => {
-        let v = e.target.value.replace(/\D/g, "");
+        let v = onlyDigits(e.target.value).slice(0, 11);
         if (v.length > 0) {
           v = v.replace(/(\d{3})(\d)/, "$1.$2");
           v = v.replace(/(\d{3})(\d)/, "$1.$2");
           v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
         }
         e.target.value = v;
+      });
+
+      document.getElementById("cnh")?.addEventListener("input", (e) => {
+        e.target.value = sanitizeCNH(e.target.value);
       });
 
       function validarCPF(cpf) {
@@ -1370,7 +1382,7 @@
         formData.append("origem", "camera");
 
         try {
-          const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
+          const resp = await fetchComRetry(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
           const data = await resp.json();
 
           if (resp.ok && data.jobId) {
@@ -1387,7 +1399,7 @@
             }
             if (data.cnh) {
               const cnhField = document.getElementById("cnh");
-              cnhField.value = data.cnh;
+              cnhField.value = sanitizeCNH(data.cnh);
               cnhField.classList.add("filled-by-ocr");
             }
             updateLoadingMessage("Dados extraídos! Iniciando consulta...");
@@ -1403,15 +1415,32 @@
       }
 
       function formatarCPF(cpf) {
-        const digits = cpf.replace(/\D/g, "");
+        const digits = onlyDigits(cpf);
         if (digits.length !== 11) return cpf;
         return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
       }
 
-      // ==========================================
+     // ==========================================
       // LÓGICA PRINCIPAL: ANÁLISE (CONSULTAR CERTIDÃO)
       // ==========================================
       let origemDados = "manual";
+
+      async function fetchComRetry(url, options = {}, tentativas = 2) {
+        let ultimoErro;
+
+        for (let i = 1; i <= tentativas; i++) {
+          try {
+            return await fetch(url, options);
+          } catch (err) {
+            ultimoErro = err;
+            if (i < tentativas) {
+              await new Promise((r) => setTimeout(r, 1200));
+            }
+          }
+        }
+
+        throw ultimoErro;
+      }
 
       async function handleDataEntry(event) {
         if(event && event.preventDefault) event.preventDefault();
@@ -1420,8 +1449,8 @@
         const cnhField = document.getElementById("cnh");
         const cpf = cpfField.value;
         const cnh = cnhField.value;
-        const cpfDigits = cpf.replace(/\D/g, "");
-        const cnhDigits = cnh.replace(/\D/g, "");
+        const cpfDigits = onlyDigits(cpf);
+        const cnhDigits = sanitizeCNH(cnh);
        
         if (!validarCPF(cpf)) { stopSmartLoading(); return alert("CPF inválido!"); }
         if (cnhDigits.length < 9) { stopSmartLoading(); return alert("CNH inválida!"); }
@@ -1432,7 +1461,7 @@
         }
        
         try {
-          const resp = await fetch(`${API_URL}/consultar-certidao`, {
+          const resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits, origem: origemDados }),
@@ -1663,7 +1692,7 @@
         } catch (e) {
           stopSmartLoading();
           console.error(e);
-          alert("Erro de comunicação: " + e.message);
+          alert("Erro de comunicação com o servidor. Verifique sua internet e tente novamente.\nDetalhe: " + e.message);
         }
       }
 
@@ -1702,7 +1731,7 @@
         formData.append("origem", origem);
 
         try {
-          const resp = await fetch(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
+          const resp = await fetchComRetry(`${API_URL}/ocr-cnh`, { method: "POST", body: formData });
           const data = await resp.json();
           
           if (resp.ok && data.jobId) {
@@ -1719,7 +1748,7 @@
               }
               if (data.cnh) {
                 const cnhField = document.getElementById("cnh");
-                cnhField.value = data.cnh;
+                cnhField.value = sanitizeCNH(data.cnh);
                 cnhField.classList.add("filled-by-ocr");
               }
               updateLoadingMessage("Dados extraídos. Iniciando consulta...");
@@ -1743,7 +1772,7 @@
                 const d = await r.json();
                 if (d.status === "done") {
                     if (d.cpf) document.getElementById("cpf").value = formatarCPF(d.cpf);
-                    if (d.cnh) document.getElementById("cnh").value = d.cnh;
+                    if (d.cnh) document.getElementById("cnh").value = sanitizeCNH(d.cnh);
                     updateLoadingMessage("PDF processado. Iniciando consulta...");
                     handleDataEntry(null);
                     return;
