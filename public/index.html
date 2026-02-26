@@ -994,7 +994,7 @@
         </div>
 
         <div id="screen3" class="screen">
-            <button class="btn-back" onclick="goToScreen2()">← Voltar</button>
+            <button class="btn-back" onclick="goToScreen2(true)">← Voltar</button>
             
             <div class="alert-section">
                 <div id="result-icon" class="alert-icon">⚠️</div>
@@ -1174,8 +1174,33 @@
         document.getElementById(screenId).classList.add("active");
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
+      function limparDadosConsulta() {
+        const cpfField = document.getElementById("cpf");
+        const cnhField = document.getElementById("cnh");
+        const previewContainer = document.getElementById("photoPreview");
+        const previewImg = document.getElementById("photoPreviewImg");
+
+        if (cpfField) {
+          cpfField.value = "";
+          cpfField.classList.remove("filled-by-ocr");
+        }
+
+        if (cnhField) {
+          cnhField.value = "";
+          cnhField.classList.remove("filled-by-ocr");
+        }
+
+        if (previewContainer) previewContainer.classList.remove("active");
+        if (previewImg) previewImg.src = "";
+
+        origemDados = "manual";
+      }
+        
       function goToScreen1() { showScreen("screen1"); }
-      function goToScreen2() { showScreen("screen2"); }
+      function goToScreen2(clearForm = false) {
+        if (clearForm) limparDadosConsulta();
+        showScreen("screen2");
+      }
       function goToScreen3() { showScreen("screen3"); }
       function goToScreen4() { showScreen("screen4"); }
       function goToScreen5() { showScreen("screen5"); }
