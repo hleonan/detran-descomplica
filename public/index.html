@@ -966,7 +966,7 @@
                     <div class="divider">OU ENVIE SUA CNH</div>
 
                     <div class="input-methods">
-                        <div class="upload-area" onclick="document.getElementById('fileUpload').click()">
+                        <div class="upload-area" onclick="abrirSeletorArquivo()">
                             <div class="upload-icon">📁</div>
                             <p class="upload-text">Upload de Arquivo</p>
                             <p class="upload-hint">PDF, JPG ou PNG da galeria</p>
@@ -1179,6 +1179,8 @@
         const cnhField = document.getElementById("cnh");
         const previewContainer = document.getElementById("photoPreview");
         const previewImg = document.getElementById("photoPreviewImg");
+        const fileUpload = document.getElementById("fileUpload");
+        const cameraCapture = document.getElementById("cameraCapture");
 
         if (cpfField) {
           cpfField.value = "";
@@ -1192,6 +1194,8 @@
 
         if (previewContainer) previewContainer.classList.remove("active");
         if (previewImg) previewImg.src = "";
+        if (fileUpload) fileUpload.value = "";
+        if (cameraCapture) cameraCapture.value = "";
 
         origemDados = "manual";
       }
@@ -1205,6 +1209,15 @@
       function goToScreen4() { showScreen("screen4"); }
       function goToScreen5() { showScreen("screen5"); }
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
+
+      function abrirSeletorArquivo() {
+        const fileInput = document.getElementById("fileUpload");
+        if (!fileInput) return;
+
+        // Permite selecionar o MESMO arquivo novamente e disparar o evento change.
+        fileInput.value = "";
+        fileInput.click();
+      }
 
       // ==========================================
       // SISTEMA DE LOADING INTELIGENTE
