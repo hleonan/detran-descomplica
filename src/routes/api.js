@@ -89,9 +89,11 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
 
     // --- FLUXO 1: PDF (Via Google Cloud Storage) ---
     if (req.file.mimetype === "application/pdf") {
-      const bucketName = process.env.OCR_BUCKET;
+      const bucketName = getOcrBucketName();
       if (!bucketName) {
-        return res.status(500).json({ error: "Configuração de Bucket ausente no servidor." });
+        return res.status(500).json({
+          error: "Configuração de Bucket ausente no servidor. Defina OCR_BUCKET (ou GCS_BUCKET).",
+        });
       }
       if (!storage || !visionClient) {
         return res.status(500).json({ error: "Google Cloud não configurado." });
@@ -183,7 +185,7 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     if (!job) return res.status(404).json({ status: "not_found" });
     if (job.status === "done") return res.json({ status: "done", ...job.result });
 
-    const bucketName = process.env.OCR_BUCKET;
+    const bucketName = getOcrBucketName();
     if (!bucketName || !storage) return res.json({ status: "processing" });
 
     const bucket = storage.bucket(bucketName);
