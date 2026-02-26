@@ -61,6 +61,16 @@ function newJobId() {
   return `ocr_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function getOcrBucketName() {
+  const bucketName =
+    process.env.OCR_BUCKET ||
+    process.env.GCS_BUCKET ||
+    process.env.GOOGLE_CLOUD_STORAGE_BUCKET ||
+    process.env.BUCKET_NAME;
+
+  return bucketName?.trim() || null;
+}
+
 // =========================
 // ROTA: Health Check
 // =========================
