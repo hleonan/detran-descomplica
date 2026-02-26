@@ -1480,6 +1480,31 @@
         throw ultimoErro;
       }
 
+      function base64ParaBlob(base64, mimeType = "application/pdf") {
+        const bin = atob(base64);
+        const len = bin.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: mimeType });
+      }
+
+      function abrirCertidaoCompleta(caseId, pdfBase64 = null) {
+        if (pdfBase64) {
+          const blob = base64ParaBlob(pdfBase64, "application/pdf");
+          const blobUrl = URL.createObjectURL(blob);
+          window.open(blobUrl, "_blank");
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+          return;
+        }
+
+        if (caseId) {
+          window.open(`${API_URL}/certidao/${caseId}`, "_blank");
+          return;
+        }
+
+        alert("Certidão indisponível no momento. Tente consultar novamente.");
+      }
+
       async function handleDataEntry(event) {
         if(event && event.preventDefault) event.preventDefault();
        
@@ -1578,7 +1603,8 @@
 
           // Salva caseId para uso posterior
           window.__lastCaseId = data.caseId;
-
+          window.__lastCertidaoBase64 = data.pdfBase64 || null;
+        
           // ── CENÁRIO 4: MULTAS + SUSPENSÃO + CASSAÇÃO ──
           if (data.status === "CASSACAO" || data.temCassacao) {
             icon.innerText = "🚨";
@@ -1613,7 +1639,7 @@
             btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
             btnSecondary.style.background = "#6c757d";
             btnSecondary.onclick = () => {
-                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
             };
 
           // ── CENÁRIO 3: MULTAS + SUSPENSÃO ──
@@ -1650,7 +1676,7 @@
             btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
             btnSecondary.style.background = "#6c757d";
             btnSecondary.onclick = () => {
-                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
             };
 
           // ── CENÁRIO 2: SÓ MULTAS ──
@@ -1687,7 +1713,7 @@
             btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
             btnSecondary.style.background = "#6c757d";
             btnSecondary.onclick = () => {
-                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
             };
 
           // ── CENÁRIO 5: NADA CONSTA ──
@@ -1715,7 +1741,7 @@
             btnAction.innerText = "BAIXAR CERTIDÃO NADA CONSTA (PDF)";
             btnAction.style.background = "linear-gradient(135deg, #28A745 0%, #20c997 100%)";
             btnAction.onclick = () => {
-                if(data.caseId) window.open(`${API_URL}/certidao/${data.caseId}`, '_blank');
+                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
             };
 
             btnSecondary.style.display = "block";
