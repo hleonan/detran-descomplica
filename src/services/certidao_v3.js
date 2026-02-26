@@ -32,6 +32,49 @@ const FRASES_ERRO = [
   "PREENCHA TODOS OS CAMPOS",
 ];
 
+function normalizarTextoAnalise(texto = "") {
+  return texto
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+}
+
+async function extrairTextoDaPagina(page) {
+  const textoPrincipal = await page.evaluate(() => {
+    const tentativas = [];
+
+    tentativas.push(document.body?.innerText || "");
+    tentativas.push(document.body?.textContent || "");
+
+    for (const iframe of document.querySelectorAll("iframe")) {
+      try {
+        tentativas.push(iframe.contentDocument?.body?.innerText || "");
+        tentativas.push(iframe.contentDocument?.body?.textContent || "");
+      } catch (e) {
+        // ignora iframes com CORS
+      }
+    }
+
+    return tentativas
+      .map((t) => (t || "").replace(/\s+/g, " ").trim())
+      .sort((a, b) => b.length - a.length)[0] || "";
+  });
+
+  if (textoPrincipal && textoPrincipal.length > 120) return textoPrincipal;
+
+  let melhorTexto = textoPrincipal || "";
+  for (const frame of page.frames()) {
+    const txt = await frame
+      .evaluate(() => (document.body?.innerText || document.body?.textContent || "").replace(/\s+/g, " ").trim())
+      .catch(() => "");
+
+    if (txt.length > melhorTexto.length) melhorTexto = txt;
+  }
+
+  return melhorTexto;
+}
+
 /**
  * Resolve o reCAPTCHA v2 usando a API do 2Captcha.
  */
@@ -90,12 +133,12 @@ async function resolverCaptcha2Captcha(twocaptchaKey, sitekey, pageUrl) {
  * temSuspensao, temCassacao, nome, numeroCertidao
  */
 function classificarCertidao(textoCompleto) {
-  const textoUpper = textoCompleto.toUpperCase();
+  const textoNormalizado = normalizarTextoAnalise(textoCompleto);
 
   const analise = {
-    status: "OK",
-    motivo: "",
-    temProblemas: false,
+    status: "DESCONHECIDO",
+    motivo: "Nao foi possivel validar automaticamente a certidao. Nossa equipe vai revisar o documento.",
+    temProblemas: true,
     temMultas: false,
     temSuspensao: false,
     temCassacao: false,
@@ -106,8 +149,8 @@ function classificarCertidao(textoCompleto) {
 
   // -- Extrair NOME do motorista --
   const nomePatterns = [
-    /(?:CERTIFICAMOS QUE[^:]*:\s*)([A-ZAEIOUAEOAOC][A-ZAEIOUAEOAOC\s]{5,}?)(?:,\s*VINCULADO)/i,
-    /VINCULADO AO CPF[^:]*:\s*\d+[^A-Z]*([A-ZAEIOUAEOAOC][A-ZAEIOUAEOAOC\s]{5,}?)(?:\.|,|$)/i,
+    /(?:CERTIFICAMOS QUE[^:]*:\s*)([A-Z\s]{5,}?)(?:,\s*VINCULADO)/i,
+    /VINCULADO AO CPF[^:]*:\s*\d+[^A-Z]*([A-Z\s]{5,}?)(?:\.|,|$)/i,
   ];
   for (const pattern of nomePatterns) {
     const match = textoCompleto.match(pattern);
@@ -117,111 +160,88 @@ function classificarCertidao(textoCompleto) {
     }
   }
 
-  // -- Extrair numero da certidao --
-  const certidaoMatch = textoCompleto.match(/N[?oo]?\s*:\s*(\d{4}\.\d+)/i);
-  if (certidaoMatch) {
-    analise.numeroCertidao = certidaoMatch[1].trim();
-  }
+  const certidaoMatch = textoNormalizado.match(/N\s*[:ºO]?\s*(\d{4}\.\d+)/i);
+  if (certidaoMatch) analise.numeroCertidao = certidaoMatch[1].trim();
 
-  // ============================================================
-  // CLASSIFICACAO USANDO FRASES EXATAS DO DETRAN
-  // ============================================================
+  const contarPenalidades = (tipo) => {
+    const regexes = [
+      new RegExp(`POSSUI\\s+(\\d+)\\s+PENALIDADE\\(S\\)\\s+DE\\s+${tipo}`, "g"),
+      new RegExp(`PENALIDADE\\(S\\)\\s+DE\\s+${tipo}[^\\d]{0,20}(\\d+)`, "g"),
+    ];
 
-  // -- Funcao auxiliar: Detecta se ha multas/infracoes nos ultimos 5 anos --
-  const detectarMultas = (texto) => {
-    const textoUp = texto.toUpperCase();
-    
-    // Verifica se ha tabela de infracoes com numeros > 0
-    const tabelaMatch = textoUp.match(/TODAS AS INFRA[CÇ][OÕ]ES - 5 ANOS[\s\S]{0,200}?(\d+)/);
-    if (tabelaMatch) {
-      const numInfracoes = parseInt(tabelaMatch[1], 10);
-      if (numInfracoes > 0) {
-        console.log(`[DETECCAO MULTAS] Encontradas ${numInfracoes} infracoes na tabela`);
-        return true;
+  let maximo = 0;
+    for (const regex of regexes) {
+      for (const m of textoNormalizado.matchAll(regex)) {
+        const n = parseInt(m[1] || "0", 10);
+        if (!Number.isNaN(n) && n > maximo) maximo = n;
       }
     }
-    
-    // Verifica padroes alternativos
-    return (
-      textoUp.includes("TODAS AS INFRACOES - 5 ANOS") ||
-      textoUp.includes("MULTAS (") ||
-      /QTD DE AUTOS[\s\S]{0,50}(\d+)/.test(textoUp) ||
-      /TODAS AS INFRACOES[\s\S]{0,50}(\d+)/.test(textoUp)
-    );
+        return maximo;
+  };
+const contarInfracoes = () => {
+    const regexes = [
+      /TODAS AS INFRACOES\s*-\s*5 ANOS[^\d]{0,40}(\d+)/g,
+      /QTD\s*DE\s*AUTOS[^\d]{0,40}(\d+)/g,
+      /INFRACOES[^\d]{0,40}(\d+)/g,
+    ];
+
+    let maximo = 0;
+    for (const regex of regexes) {
+      for (const m of textoNormalizado.matchAll(regex)) {
+        const n = parseInt(m[1] || "0", 10);
+        if (!Number.isNaN(n) && n > maximo) maximo = n;
+      }
+    }
+    return maximo;
   };
 
-  const temMultasDetectadas = detectarMultas(textoCompleto);
+  const qtdCassacao = contarPenalidades("CASSACAO");
+  const qtdSuspensao = contarPenalidades("SUSPENSAO");
+  const qtdInfracoes = contarInfracoes();
 
-  // -- 1. NADA CONSTA (frase exata) --
-  if (textoUpper.includes("NADA CONSTA, NO SISTEMA DE INFRA")) {
-    analise.status = "OK";
-    analise.temProblemas = false;
-    analise.motivo = "Parabens! Sua CNH esta limpa, sem nenhuma ocorrencia registrada no DETRAN.";
-    console.log("[CLASSIFICACAO] ? NADA CONSTA");
+ analise.dados = { qtdCassacao, qtdSuspensao, qtdInfracoes };
+
+  const indicaNadaConsta = textoNormalizado.includes("NADA CONSTA") && qtdCassacao === 0 && qtdSuspensao === 0 && qtdInfracoes === 0;
+
+  if (qtdCassacao > 0) {
+    analise.status = "CASSACAO";
+    analise.temProblemas = true;
+    analise.temCassacao = true;
+    analise.temSuspensao = qtdSuspensao > 0;
+    analise.temMultas = qtdInfracoes > 0;
+    analise.motivo = "Identificamos processo de cassacao ativo no DETRAN.";
     return analise;
   }
 
-  // -- 2. CASSACAO (verifica numero > 0) --
-  const cassacaoMatch = textoUpper.match(/CONDUTOR POSSUI (\d+) PENALIDADE\(S\) DE CASSA[CÇ][AÃ]O/);
-  if (cassacaoMatch) {
-    const numCassacao = parseInt(cassacaoMatch[1], 10);
-    if (numCassacao > 0) {
-      analise.status = "CASSACAO";
-      analise.temProblemas = true;
-      analise.temCassacao = true;
-      analise.temSuspensao = true; // Cassacao sempre vem com suspensao
-      analise.temMultas = temMultasDetectadas; // Verifica se ha multas visiveis
-      analise.motivo =
-        "Sua CNH esta em risco de cassacao. Isso significa que voce pode perder sua habilitacao e precisar iniciar um novo processo do zero. Nossa equipe pode te ajudar a reverter essa situacao.";
-      console.log(`[CLASSIFICACAO] ? CASSACAO (${numCassacao} processo(s))`);
-      return analise;
-    }
+  if (qtdSuspensao > 0) {
+    analise.status = "SUSPENSAO";
+    analise.temProblemas = true;
+    analise.temSuspensao = true;
+    analise.temMultas = qtdInfracoes > 0;
+    analise.motivo = "Identificamos processo de suspensao do direito de dirigir.";
+    return analise;
   }
 
-  // -- 3. SUSPENSAO (verifica numero > 0) --
-  const suspensaoMatch = textoUpper.match(/CONDUTOR POSSUI (\d+) PENALIDADE\(S\) DE SUSPENS[AÃ]O/);
-  if (suspensaoMatch) {
-    const numSuspensao = parseInt(suspensaoMatch[1], 10);
-    if (numSuspensao > 0) {
-      analise.status = "SUSPENSAO";
-      analise.temProblemas = true;
-      analise.temSuspensao = true;
-      analise.temMultas = temMultasDetectadas; // Verifica se ha multas visiveis
-      analise.motivo =
-        "Sua CNH esta em risco iminente de suspensao. Identificamos um processo de suspensao do direito de dirigir. Nossa equipe pode te ajudar a resolver antes que seja tarde.";
-      console.log(`[CLASSIFICACAO] ? SUSPENSAO (${numSuspensao} processo(s))`);
-      return analise;
-    }
-  }
-
-  // -- 4. MULTAS (sem suspensao/cassacao) --
-  const temMultasTexto =
-    textoUpper.includes("CONDUTOR NAO POSSUI PENALIDADE DE SUSPENSAO") ||
-    textoUpper.includes("NENHUM REGISTRO ENCONTRADO PARA PENALIDADES DE SUSPENSAO");
-
-  if (temMultasTexto && temMultasDetectadas) {
+  if (qtdInfracoes > 0) {
     analise.status = "MULTAS";
     analise.temProblemas = true;
     analise.temMultas = true;
-    analise.motivo =
-      "Identificamos multas no seu prontuario. Se nao forem tratadas, podem gerar um processo de suspensao da sua CNH. Nossa equipe pode te ajudar a resolver.";
-    console.log("[CLASSIFICACAO] ? MULTAS");
+    analise.motivo = "Identificamos ocorrencias/multas no prontuario do condutor.";
     return analise;
   }
 
-  // -- 5. FALLBACK --
-  // Se chegou aqui, pode ser um caso edge ou certidao vazia
-  if (textoUpper.includes("CERTIDAO") || textoUpper.includes("CERTIFICAMOS")) {
+  if (indicaNadaConsta) {
     analise.status = "OK";
     analise.temProblemas = false;
-    analise.motivo = "Certidao emitida. Sem restricoes aparentes.";
-    console.log("[CLASSIFICACAO] ? OK (fallback)");
-  } else {
-    console.warn("[CLASSIFICACAO] ? Nao foi possivel classificar o documento.");
+    analise.motivo = "Nada consta no sistema de infracoes do DETRAN.";
+    return analise;
   }
 
-  console.log(`[CLASSIFICACAO] Status: ${analise.status}`);
-  console.log(`[CLASSIFICACAO] Multas: ${analise.temMultas} | Suspensao: ${analise.temSuspensao} | Cassacao: ${analise.temCassacao}`);
+  if (textoNormalizado.includes("CERTIDAO") || textoNormalizado.includes("CERTIFICAMOS")) {
+    analise.status = "DESCONHECIDO";
+    analise.temProblemas = true;
+    analise.motivo = "Certidao emitida, mas o resultado nao foi identificado com seguranca. Nossa equipe vai revisar.";
+  }
 
   return analise;
 }
@@ -392,32 +412,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     // 6. TRAVA DE SEGURANCA -- Validacao do Resultado (Pagina 1)
     // ============================================================
     console.log("[DETRAN] Validando resultado da consulta (Pagina 1)...");
-    let textoPagina1 = await page.evaluate(() => {
-      // Estrategia 1: innerText
-      let texto = document.body.innerText || '';
-      
-      // Estrategia 2: textContent (se innerText vazio)
-      if (texto.trim().length < 100) {
-        texto = document.body.textContent || '';
-      }
-      
-      // Estrategia 3: iframe (se ainda vazio)
-      if (texto.trim().length < 100) {
-        const iframes = document.querySelectorAll('iframe');
-        for (const iframe of iframes) {
-          try {
-            const iframeTexto = iframe.contentDocument?.body?.innerText || iframe.contentDocument?.body?.textContent || '';
-            if (iframeTexto.trim().length > texto.length) {
-              texto = iframeTexto;
-            }
-          } catch (e) {
-            // Ignorar iframes com CORS
-          }
-        }
-      }
-      
-      return texto;
-    });
+    const textoPagina1 = await extrairTextoDaPagina(page);
     const textoUpperP1 = textoPagina1.toUpperCase();
 
     console.log(`[DETRAN] Texto P1 (200 chars): ${textoPagina1.substring(0, 200)}...`);
@@ -438,8 +433,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       (textoUpperP1.includes("CPF") && textoPagina1.length > 200);
 
     if (!temConteudoMinimo) {
-      console.warn("[DETRAN] Pagina sem conteudo reconhecivel.");
-      throw new Error("DETRAN_FAIL: O site nao retornou um resultado valido. Tente novamente.");
+      console.warn("[DETRAN] Pagina sem conteudo totalmente reconhecivel. Seguiremos com a certidao para analise conservadora.");
     }
 
     console.log("[DETRAN] Pagina 1 validada!");
@@ -577,7 +571,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
         }
 
         // Captura texto e screenshot da Pagina 2
-        textoExtrato = await page.evaluate(() => document.body.innerText);
+        textoExtrato = await extrairTextoDaPagina(page);
         console.log(`[DETRAN] Texto Extrato (200 chars): ${textoExtrato.substring(0, 200)}...`);
 
         // Verifica se a pagina 2 e diferente da pagina 1
