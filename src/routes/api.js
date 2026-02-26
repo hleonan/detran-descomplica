@@ -71,6 +71,10 @@ function getOcrBucketName() {
   return bucketName?.trim() || null;
 }
 
+function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 // =========================
 // ROTA: Health Check
 // =========================
@@ -151,8 +155,8 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       return res.status(422).json({ error: result?.erro || "Falha na leitura da imagem." });
     }
 
-    const cpf = result.dados?.cpf || null;
-    const cnh = result.dados?.cnh || null;
+    const cpf = onlyDigits(result.dados?.cpf);
+    const cnh = onlyDigits(result.dados?.cnh);
     const nome = result.dados?.nome || null;
 
     // REGISTRAR LEAD (dados do OCR)
@@ -166,7 +170,7 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       });
     }
 
-    return res.json({ cpf, cnh, nome });
+    return res.json({ cpf: cpf || null, cnh: cnh || null, nome });
 
   } catch (err) {
     console.error("Erro /api/ocr-cnh:", err);
@@ -241,25 +245,30 @@ router.post("/consultar-certidao", async (req, res) => {
   try {
     cleanupCertidoes();
     const { cpf, cnh, origem } = req.body || {};
-    if (!cpf || !cnh) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
+    const cpfDigits = onlyDigits(cpf);
+    const cnhDigits = onlyDigits(cnh);
 
+    if (!cpfDigits || !cnhDigits) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
+    if (cpfDigits.length !== 11) return res.status(400).json({ ok: false, error: "CPF inválido." });
+    if (cnhDigits.length < 9 || cnhDigits.length > 11) return res.status(400).json({ ok: false, error: "CNH inválida." });
+    
     // REGISTRAR LEAD (início da consulta)
     registrarLead({
-      cpf,
-      cnh,
+      cpf: cpfDigits,
+      cnh: cnhDigits,
       origem: origem || "manual",
       status: "DESCONHECIDO",
     });
 
     // Chama a automação do Playwright
     // AGORA RETORNA { pdfBuffer, analise } em vez de só pdfBuffer
-    const resultado = await emitirCertidaoPDF(cpf, cnh);
+    const resultado = await emitirCertidaoPDF(cpfDigits, cnhDigits);
     const { pdfBuffer, analise } = resultado;
 
     // ATUALIZAR LEAD com dados da certidão (extraídos do HTML, não do PDF)
     registrarLead({
-      cpf,
-      cnh,
+      cpf: cpfDigits,
+      cnh: cnhDigits,
       nome: analise.nome || null,
       origem: origem || "manual",
       status: analise.status,
@@ -313,12 +322,14 @@ router.get("/certidao/:caseId", (req, res) => {
 router.post("/consultar-multas", async (req, res) => {
   try {
     const { cpf, cnh } = req.body;
+    const cpfDigits = onlyDigits(cpf);
+    const cnhDigits = onlyDigits(cnh);
     const apiKey = process.env.TWOCAPTCHA_API_KEY;
 
     if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
 
     const automation = new PontuacaoAutomation(apiKey);
-    const resultado = await automation.consultarPontuacao(cpf, cnh, "RJ");
+    const resultado = await automation.consultarPontuacao(cpfDigits, cnhDigits, "RJ");
 
     if (!resultado.sucesso) throw new Error(resultado.erro || "Falha ao consultar multas.");
 
