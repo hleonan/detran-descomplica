@@ -75,6 +75,90 @@ async function extrairTextoDaPagina(page) {
   return melhorTexto;
 }
 
+
+async function tentarCliqueExtratoNoContexto(contexto, nomeContexto = "pagina") {
+  const seletores = [
+    'a:has-text("CLIQUE AQUI")',
+    'a:has-text("EXTRATO COMPLETO")',
+    'a[href*="extrato" i]',
+    'a[href*="emitir" i]',
+    'area[alt*="EXTRATO" i]',
+    'area[alt*="CLIQUE" i]',
+    '[onclick*="extrato" i]',
+    'img[alt*="EXTRATO" i]',
+  ];
+
+  for (const seletor of seletores) {
+    try {
+      const alvo = await contexto.locator(seletor).first();
+      const existe = await alvo.count();
+      if (!existe) continue;
+
+      await alvo.click({ timeout: 2000 });
+      console.log(`[DETRAN] ✅ Clique no extrato via seletor (${nomeContexto}): ${seletor}`);
+      return true;
+    } catch (e) {
+      // tenta o proximo
+    }
+  }
+
+  const clicouViaJS = await contexto
+    .evaluate(() => {
+      const normalizar = (txt) =>
+        (txt || "")
+          .toString()
+          .normalize("NFD")
+          .replace(/[̀-ͯ]/g, "")
+          .toUpperCase();
+
+      const candidatos = Array.from(
+        document.querySelectorAll('a, area, button, [role="button"], [onclick], img[usemap]')
+      );
+
+      for (const el of candidatos) {
+        const texto = normalizar(el.innerText || el.textContent || "");
+        const href = normalizar(el.getAttribute("href") || "");
+        const onclick = normalizar(el.getAttribute("onclick") || "");
+
+        const alvoExtrato =
+          texto.includes("EXTRATO") ||
+          texto.includes("CLIQUE AQUI") ||
+          href.includes("EXTRATO") ||
+          onclick.includes("EXTRATO");
+
+        if (alvoExtrato) {
+          el.click();
+          return true;
+        }
+      }
+
+      return false;
+    })
+    .catch(() => false);
+
+  if (clicouViaJS) {
+    console.log(`[DETRAN] ✅ Clique no extrato via JavaScript (${nomeContexto})`);
+    return true;
+  }
+
+  return false;
+}
+
+async function tentarClicarExtrato(page) {
+  const contextos = [
+    { alvo: page, nome: "pagina principal" },
+    ...page.frames().map((frame, i) => ({ alvo: frame, nome: `frame ${i + 1}` })),
+  ];
+
+  for (const { alvo, nome } of contextos) {
+    const clicou = await tentarCliqueExtratoNoContexto(alvo, nome);
+    if (clicou) return true;
+  }
+
+  return false;
+}
+
+
 /**
  * Resolve o reCAPTCHA v2 usando a API do 2Captcha.
  */
@@ -146,7 +230,6 @@ function classificarCertidao(textoCompleto) {
     numeroCertidao: null,
     dados: {},
   };
-
   // -- Extrair NOME do motorista --
   const nomePatterns = [
     /(?:CERTIFICAMOS QUE[^:]*:\s*)([A-Z\s]{5,}?)(?:,\s*VINCULADO)/i,
@@ -178,6 +261,7 @@ function classificarCertidao(textoCompleto) {
     }
         return maximo;
   };
+  
 const contarInfracoes = () => {
     const regexes = [
       /TODAS AS INFRACOES\s*-\s*5 ANOS[^\d]{0,40}(\d+)/g,
@@ -245,6 +329,7 @@ const contarInfracoes = () => {
 
   return analise;
 }
+
 
 /**
  * Funcao principal: Emite a certidao do DETRAN-RJ.
@@ -456,139 +541,56 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     if (temLinkExtrato) {
       console.log("[DETRAN] Link de extrato detectado no texto. Tentando clicar...");
       
-      // Log de debug: Listar todos os links da pagina
-      const todosLinks = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll('a')).map(a => ({
-          text: (a.innerText || a.textContent || '').substring(0, 50),
-          href: a.href,
-          visible: a.offsetParent !== null
-        }));
-      });
-      console.log(`[DETRAN] Total de links na pagina: ${todosLinks.length}`);
-      console.log('[DETRAN] Links encontrados:', JSON.stringify(todosLinks.slice(0, 5), null, 2));
-
-      // Estrategia 1: Procurar por texto exato em links
-      try {
-        const linkExtrato = await page.locator('a:has-text("CLIQUE AQUI PARA EMITIR EXTRATO COMPLETO")').first();
-        if (await linkExtrato.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await linkExtrato.click();
-          clicouExtrato = true;
-          console.log("[DETRAN] ? Clicou via locator text");
-        }
-      } catch (e) {
-        console.log("[DETRAN] Estrategia 1 falhou, tentando proxima...");
-      }
-
-      // Estrategia 2: Procurar por href contendo "extrato"
-      if (!clicouExtrato) {
-        try {
-          const linkHref = await page.$('a[href*="extrato" i]');
-          if (linkHref && (await linkHref.isVisible())) {
-            await linkHref.click();
-            clicouExtrato = true;
-            console.log("[DETRAN] ? Clicou via href");
-          }
-        } catch (e) {
-          console.log("[DETRAN] Estrategia 2 falhou, tentando proxima...");
-        }
-      }
-
-      // Estrategia 3: JavaScript click em todos os links com texto relevante
-      if (!clicouExtrato) {
-        clicouExtrato = await page.evaluate(() => {
-          const links = document.querySelectorAll("a");
-          for (const link of links) {
-            const txt = (link.innerText || link.textContent || "").toUpperCase();
-            if (
-              txt.includes("EXTRATO COMPLETO") ||
-              txt.includes("EMITIR EXTRATO") ||
-              txt.includes("CLIQUE AQUI")
-            ) {
-              link.click();
-              return true;
-            }
-          }
-          return false;
-        });
-        if (clicouExtrato) {
-          console.log("[DETRAN] ? Clicou via JavaScript");
-        }
-      }
-
-      // Estrategia 4: Procurar por imagem clicavel (area/map)
-      if (!clicouExtrato) {
-        try {
-          const imgLink = await page.$('img[usemap], area[alt*="CLIQUE" i], area[alt*="EXTRATO" i]');
-          if (imgLink) {
-            await imgLink.click();
-            clicouExtrato = true;
-            console.log("[DETRAN] ? Clicou via imagem/area");
-          }
-        } catch (e) {
-          console.log("[DETRAN] Estrategia 4 falhou, tentando proxima...");
-        }
-      }
-
-      // Estrategia 5: Clicar na posicao da imagem (coordenadas)
-      if (!clicouExtrato) {
-        try {
-          const imgExtrato = await page.$('img[alt*="CLIQUE" i], img[title*="EXTRATO" i]');
-          if (imgExtrato) {
-            await imgExtrato.click();
-            clicouExtrato = true;
-            console.log("[DETRAN] ? Clicou via imagem direta");
-          }
-        } catch (e) {
-          console.log("[DETRAN] Estrategia 5 falhou.");
-        }
-      }
+      const qtdFrames = page.frames().length;
+      console.log(`[DETRAN] Contextos disponiveis para clique: pagina principal + ${qtdFrames} frame(s)`);
+      
+      clicouExtrato = await tentarClicarExtrato(page);
 
       if (clicouExtrato) {
         console.log("[DETRAN] Aguardando carregamento da Pagina 2...");
         
-        // Verifica se uma nova aba foi aberta
-        await page.waitForTimeout(2000); // Aguarda 2s para nova aba abrir
-        const pages = context.pages();
-        console.log(`[DETRAN] Total de abas abertas: ${pages.length}`);
-        
-        if (pages.length > 1) {
+        const paginasAntes = context.pages().length;
+        await page.waitForTimeout(2500);
+        const paginasDepois = context.pages();
+        console.log(`[DETRAN] Total de abas abertas: ${paginasDepois.length}`);
+
+        if (paginasDepois.length > paginasAntes) {
           console.log("[DETRAN] Nova aba detectada! Mudando para a nova aba...");
-          page = pages[pages.length - 1]; // Muda para a ultima aba aberta
+          page = paginasDepois[paginasDepois.length - 1];
           await page.bringToFront();
           
-          // Aguarda a nova aba carregar COMPLETAMENTE
-          console.log("[DETRAN] Aguardando nova aba carregar...");
+          await page.waitForLoadState("domcontentloaded", { timeout: 45000 }).catch(() => {
+            console.log("[DETRAN] DomContentLoaded timeout na nova aba");
+          });
           await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
             console.log("[DETRAN] NetworkIdle timeout na nova aba");
           });
-          await page.waitForTimeout(5000); // 5s para garantir carregamento completo
+          await page.waitForTimeout(3000);
         } else {
-          // Se nao abriu nova aba, aguarda na mesma aba
           await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
             console.log("[DETRAN] NetworkIdle timeout na Pagina 2");
           });
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(2500);
         }
 
-        // Captura texto e screenshot da Pagina 2
         textoExtrato = await extrairTextoDaPagina(page);
         console.log(`[DETRAN] Texto Extrato (200 chars): ${textoExtrato.substring(0, 200)}...`);
 
-        // Verifica se a pagina 2 e diferente da pagina 1
-        if (textoExtrato.length > textoPagina1.length * 1.2) {
+        if (textoExtrato.length > textoPagina1.length * 1.05 || textoExtrato.includes("PENALIDADE") || textoExtrato.includes("PROCESSO")) {
           screenshotPag2 = await page.screenshot({ fullPage: true, type: "png" });
-          console.log("[DETRAN] ? Screenshot da Pagina 2 capturado!");
+          console.log("[DETRAN] ✅ Screenshot da Pagina 2 capturado!");
         } else {
-          console.warn("[DETRAN] ? Pagina 2 parece identica a Pagina 1. Ignorando...");
+          console.warn("[DETRAN] ⚠️ Pagina 2 sem diferenca relevante. Mantendo apenas Pagina 1.");
           screenshotPag2 = null;
         }
       } else {
-        console.warn("[DETRAN] ? Nao conseguiu clicar no link de extrato. Usando apenas Pagina 1.");
+        console.warn("[DETRAN] ⚠️ Nao conseguiu clicar no link de extrato (incluindo tentativa em frames). Usando apenas Pagina 1.");
       }
     } else {
       console.log("[DETRAN] Link de extrato NAO encontrado no texto. Provavelmente e 'Nada Consta'.");
     }
 
+    
     // ============================================================
     // 8. CLASSIFICAR A SITUACAO (FRASES EXATAS)
     // ============================================================
