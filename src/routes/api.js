@@ -288,6 +288,7 @@ router.post("/consultar-certidao", async (req, res) => {
     return res.json({
       ok: true,
       caseId,
+      pdfBase64: pdfBuffer.toString("base64"),
       temProblemas: analise.temProblemas,
       temMultas: analise.temMultas || false,
       temSuspensao: analise.temSuspensao || false,
