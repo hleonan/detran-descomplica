@@ -264,9 +264,9 @@ function classificarCertidao(textoCompleto) {
   
 const contarInfracoes = () => {
     const regexes = [
-      /TODAS AS INFRACOES\s*-\s*5 ANOS[^\d]{0,40}(\d+)/g,
-      /QTD\s*DE\s*AUTOS[^\d]{0,40}(\d+)/g,
-      /INFRACOES[^\d]{0,40}(\d+)/g,
+      /TODAS AS INFRACOES\s*-\s*5 ANOS[^\d]{0,25}(\d{1,3})/g,
+      /QTD\s*DE\s*AUTOS[^\d]{0,20}(\d{1,3})/g,
+      /TODAS\s+AS\s+INFRACOES\s*(?:\n|\r|\s)*QTD\s*DE\s*AUTOS[^\d]{0,25}(\d{1,3})/g,
     ];
 
     let maximo = 0;
@@ -285,8 +285,11 @@ const contarInfracoes = () => {
 
  analise.dados = { qtdCassacao, qtdSuspensao, qtdInfracoes };
 
-  const indicaNadaConsta = textoNormalizado.includes("NADA CONSTA") && qtdCassacao === 0 && qtdSuspensao === 0 && qtdInfracoes === 0;
-
+  const temFraseNadaConsta =
+    textoNormalizado.includes("NADA CONSTA, NO SISTEMA DE INFRACOES") ||
+    textoNormalizado.includes("CERTIDAO DE NADA CONSTA") ||
+    textoNormalizado.includes("NADA CONSTA");
+  
   if (qtdCassacao > 0) {
     analise.status = "CASSACAO";
     analise.temProblemas = true;
@@ -306,18 +309,19 @@ const contarInfracoes = () => {
     return analise;
   }
 
+  if (temFraseNadaConsta && qtdCassacao === 0 && qtdSuspensao === 0) {
+    analise.status = "OK";
+    analise.temProblemas = false;
+    analise.temMultas = false;
+    analise.motivo = "Nada consta no sistema de infracoes do DETRAN.";
+    return analise;
+  }
+
   if (qtdInfracoes > 0) {
     analise.status = "MULTAS";
     analise.temProblemas = true;
     analise.temMultas = true;
     analise.motivo = "Identificamos ocorrencias/multas no prontuario do condutor.";
-    return analise;
-  }
-
-  if (indicaNadaConsta) {
-    analise.status = "OK";
-    analise.temProblemas = false;
-    analise.motivo = "Nada consta no sistema de infracoes do DETRAN.";
     return analise;
   }
 
