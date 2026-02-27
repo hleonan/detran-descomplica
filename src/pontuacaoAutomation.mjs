@@ -36,41 +36,28 @@ class PontuacaoAutomation {
 
       const page = await context.newPage();
 
-      // Remove indicadores de automação
       await page.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
       });
 
-      // Navegar para a página de consulta
       await page.goto('http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: 45000
       });
 
-      // Preencher CPF
       await page.fill('input[name="cpf"]', cpf);
-      
-      // Preencher CNH
       await page.fill('input[name="cnh"]', cnh);
-      
-      // Selecionar UF
-      await page.selectOption('select[name="uf"]', uf);
+      await page.selectOption('select[name="uf"]', uf || 'RJ');
 
-      // Resolver CAPTCHA
       console.log('[MULTAS] Resolvendo CAPTCHA...');
       const captchaToken = await this.resolverCaptcha(page);
-      
-      if (!captchaToken) {
-        throw new Error('Falha ao resolver CAPTCHA');
-      }
+      if (!captchaToken) throw new Error('Falha ao resolver CAPTCHA');
 
-      // Enviar formulário
-      await page.click('button[type="submit"]');
-      
-      // Aguardar resultado
-      await page.waitForLoadState('networkidle', { timeout: 30000 });
+      await Promise.all([
+        page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
+        page.click('button[type="submit"]')
+      ]);
 
-      // Capturar resultado
       const resultado = await this.capturarResultado(page);
 
       await context.close();
@@ -79,7 +66,7 @@ class PontuacaoAutomation {
       return resultado;
     } catch (error) {
       if (this.browser) {
-        try { await this.browser.close(); } catch(e) {}
+        try { await this.browser.close(); } catch (e) {}
       }
       throw error;
     }
@@ -118,11 +105,11 @@ class PontuacaoAutomation {
 
       const token = await this.twoCaptcha.obterResultado(captchaId);
       
-      await page.evaluate((token) => {
+      await page.evaluate((resolvedToken) => {
         const responseField = document.getElementById('g-recaptcha-response');
         if (responseField) {
-          responseField.innerHTML = token;
-          responseField.value = token;
+          responseField.innerHTML = resolvedToken;
+          responseField.value = resolvedToken;
         }
       }, token);
 
@@ -135,41 +122,27 @@ class PontuacaoAutomation {
 
   async capturarResultado(page) {
     try {
-      await page.waitForSelector('table, div[class*="resultado"]', { timeout: 10000 });
+      await page.waitForSelector('body', { timeout: 10000 });
 
-      const multas = await page.evaluate(() => {
-        const rows = document.querySelectorAll('table tbody tr');
-        const dados = [];
-
-        rows.forEach(row => {
-          const cells = row.querySelectorAll('td');
-          if (cells.length > 0) {
-            dados.push({
-              data: cells[0]?.textContent?.trim() || '',
-              descricao: cells[1]?.textContent?.trim() || '',
-              pontos: cells[2]?.textContent?.trim() || '',
-              valor: cells[3]?.textContent?.trim() || '',
-              status: cells[4]?.textContent?.trim() || ''
-            });
-          }
-        });
-
-        return dados;
+      const erroTela = await page.evaluate(() => {
+        const texto = document.body.innerText || '';
+        const padraoErro = /(não foi possível|captcha inválido|dados inválidos|erro ao consultar)/i;
+        return padraoErro.test(texto) ? texto.slice(0, 350) : null;
       });
+      if (erroTela) {
+        return { sucesso: false, erro: `DETRAN retornou erro na consulta de pontuação. ${erroTela}` };
+      }
 
-      const resumo = await page.evaluate(() => {
-        const texto = document.body.innerText;
-        return {
-          pontosTotais: texto.match(/Pontos totais?:?\s*(\d+)/i)?.[1] || '0',
-          multasPendentes: texto.match(/Multas pendentes?:?\s*(\d+)/i)?.[1] || '0',
-          situacao: texto.match(/Situação?:?\s*([^\n]+)/i)?.[1] || 'Desconhecida'
-        };
-      });
+      const resumo = await this.extrairResumoPontuacao(page);
+
+      await this.abrirDetalhesTodasInfracoes(page);
+
+      const multas = await this.extrairMultasDetalhadas(page);
 
       return {
         sucesso: true,
-        multas: multas,
-        resumo: resumo,
+        multas,
+        resumo,
         dataConsulta: new Date().toISOString()
       };
     } catch (error) {
@@ -179,6 +152,149 @@ class PontuacaoAutomation {
         erro: error.message
       };
     }
+  }
+
+  async extrairResumoPontuacao(page) {
+    return page.evaluate(() => {
+      const textoNormalizado = (s) => (s || '').replace(/\s+/g, ' ').trim();
+      const numero = (s) => {
+        const m = String(s || '').match(/\d+/);
+        return m ? m[0] : '0';
+      };
+
+      const resumo = {
+        pontosTotais: '0',
+        multasPendentes: '0',
+        situacao: 'Regular'
+      };
+
+      const linhas = Array.from(document.querySelectorAll('tr'));
+      let quantidadeAutosUltimos5Anos = 0;
+      let pontosUltimos5Anos = 0;
+
+      for (const tr of linhas) {
+        const tds = Array.from(tr.querySelectorAll('td')).map((td) => textoNormalizado(td.textContent));
+        if (tds.length < 3) continue;
+
+        const titulo = tds[0].toLowerCase();
+        if (titulo.includes('infrações pontuáveis') && titulo.includes('últimos 5 anos')) {
+          quantidadeAutosUltimos5Anos = Number(numero(tds[1]));
+          pontosUltimos5Anos = Number(numero(tds[2]));
+        }
+      }
+
+      resumo.pontosTotais = String(pontosUltimos5Anos || 0);
+      resumo.multasPendentes = String(quantidadeAutosUltimos5Anos || 0);
+
+      if (pontosUltimos5Anos > 0 || quantidadeAutosUltimos5Anos > 0) {
+        resumo.situacao = 'Com infrações';
+      }
+
+      return resumo;
+    });
+  }
+
+  async abrirDetalhesTodasInfracoes(page) {
+    // Tenta clicar no ícone de lupa da linha "Todas as Infrações (últimos 5 anos)".
+    const lupa = page.locator('tr', { hasText: 'Todas as Infrações (últimos 5 anos)' }).locator('a, img').first();
+
+    if (await lupa.count()) {
+      const currentUrl = page.url();
+      try {
+        await Promise.all([
+          page.waitForLoadState('domcontentloaded', { timeout: 15000 }),
+          lupa.click({ timeout: 5000 })
+        ]);
+      } catch {
+        // fallback: clique sem wait explícito
+        try { await lupa.click({ timeout: 3000 }); } catch (e) {}
+      }
+
+      await page.waitForTimeout(1200);
+      if (page.url() === currentUrl) {
+        // Algumas páginas abrem detalhe em popup/mesma tela sem alterar URL;
+        // segue para extração mesmo assim.
+      }
+    }
+  }
+
+  async extrairMultasDetalhadas(page) {
+    await page.waitForTimeout(800);
+
+    // Se houver links "Nº Auto", clica em todos para expandir detalhamento.
+    const linksNumeroAuto = page.locator('a', { hasText: 'Nº Auto' });
+    const totalLinks = await linksNumeroAuto.count();
+    for (let i = 0; i < totalLinks; i += 1) {
+      try {
+        await linksNumeroAuto.nth(i).click({ timeout: 2000 });
+        await page.waitForTimeout(250);
+      } catch (e) {}
+    }
+
+    const multas = await page.evaluate(() => {
+      const texto = (document.body?.innerText || '').replace(/\u00A0/g, ' ');
+      const blocos = texto
+        .split(/(?=N[ºo]\s*Auto\s*:)/i)
+        .map((b) => b.trim())
+        .filter((b) => /N[ºo]\s*Auto\s*:/i.test(b));
+
+      const parseCampo = (bloco, regex) => {
+        const m = bloco.match(regex);
+        return m?.[1]?.trim() || '';
+      };
+
+      const dados = blocos.map((bloco) => {
+        const auto = parseCampo(bloco, /N[ºo]\s*Auto\s*:\s*([^\n]+)/i);
+        const dataHora = parseCampo(bloco, /Data\s*:\s*([^\n]+)/i);
+        const orgao = parseCampo(bloco, /Org[aã]o\s*:\s*([^\n]+)/i);
+        const placa = parseCampo(bloco, /Placa\s*:\s*([^\n]+)/i);
+        const proprietario = parseCampo(bloco, /Propriet[aá]rio\s*:\s*([^\n]+)/i);
+        const responsavel = parseCampo(bloco, /Resp\.\s*Pontos\s*:\s*([^\n]+)/i);
+
+        const descricao = [
+          auto ? `Auto ${auto}` : '',
+          orgao ? `Órgão: ${orgao}` : '',
+          placa ? `Placa: ${placa}` : '',
+          proprietario ? `Proprietário: ${proprietario}` : '',
+          responsavel ? `Resp. Pontos: ${responsavel}` : ''
+        ].filter(Boolean).join(' • ');
+
+        return {
+          data: dataHora || '-',
+          descricao: descricao || bloco.slice(0, 200),
+          pontos: '-',
+          valor: '-',
+          status: 'Pendente',
+          numeroAuto: auto || null,
+          orgao: orgao || null,
+          placa: placa || null,
+          proprietario: proprietario || null,
+          responsavelPontos: responsavel || null
+        };
+      });
+
+      // fallback para layout tabular
+      if (!dados.length) {
+        const rows = Array.from(document.querySelectorAll('table tbody tr'));
+        return rows
+          .map((row) => {
+            const cells = Array.from(row.querySelectorAll('td')).map((td) => (td.textContent || '').trim());
+            if (!cells.length) return null;
+            return {
+              data: cells[0] || '-',
+              descricao: cells[1] || 'Infração de trânsito',
+              pontos: cells[2] || '-',
+              valor: cells[3] || '-',
+              status: cells[4] || 'Pendente'
+            };
+          })
+          .filter(Boolean);
+      }
+
+      return dados;
+    });
+
+    return multas;
   }
 }
 
