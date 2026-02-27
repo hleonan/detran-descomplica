@@ -287,15 +287,29 @@ const contarInfracoes = () => {
 
   const temFraseNadaConsta =
     textoNormalizado.includes("NADA CONSTA, NO SISTEMA DE INFRACOES") ||
-    textoNormalizado.includes("CERTIDAO DE NADA CONSTA") ||
-    textoNormalizado.includes("NADA CONSTA");
-  
+    textoNormalizado.includes("NADA CONSTA NO SISTEMA DE INFRACOES") ||
+    textoNormalizado.includes("NADA CONSTA, NO SISTEMA DE INFRACAO") ||
+    textoNormalizado.includes("NADA CONSTA NO SISTEMA DE INFRACAO");
+
+  const temMarcadorExtrato =
+    textoNormalizado.includes("CLIQUE AQUI PARA EMITIR EXTRATO COMPLETO") ||
+    textoNormalizado.includes("EMITIR EXTRATO COMPLETO");
+
+  const temTabelaInfracoes =
+    textoNormalizado.includes("TODAS AS INFRACOES") ||
+    textoNormalizado.includes("QTD DE AUTOS") ||
+    textoNormalizado.includes("PONTUAVEIS - 12 MESES") ||
+    textoNormalizado.includes("INFRACOES MANDATORIAS - 12 MESES");
+
+  const temMarcadorOcorrencia = temMarcadorExtrato || temTabelaInfracoes;
+
+  // Prioridade 1: penalidades graves
   if (qtdCassacao > 0) {
     analise.status = "CASSACAO";
     analise.temProblemas = true;
     analise.temCassacao = true;
     analise.temSuspensao = qtdSuspensao > 0;
-    analise.temMultas = qtdInfracoes > 0;
+    analise.temMultas = qtdInfracoes > 0 || temMarcadorOcorrencia;
     analise.motivo = "Identificamos processo de cassacao ativo no DETRAN.";
     return analise;
   }
@@ -304,24 +318,26 @@ const contarInfracoes = () => {
     analise.status = "SUSPENSAO";
     analise.temProblemas = true;
     analise.temSuspensao = true;
-    analise.temMultas = qtdInfracoes > 0;
+    analise.temMultas = qtdInfracoes > 0 || temMarcadorOcorrencia;
     analise.motivo = "Identificamos processo de suspensao do direito de dirigir.";
     return analise;
   }
 
-  if (temFraseNadaConsta && qtdCassacao === 0 && qtdSuspensao === 0) {
-    analise.status = "OK";
-    analise.temProblemas = false;
-    analise.temMultas = false;
-    analise.motivo = "Nada consta no sistema de infracoes do DETRAN.";
-    return analise;
-  }
-
-  if (qtdInfracoes > 0) {
+  // Prioridade 2: ocorrencia de multas (quantidade OU marcadores estruturais da pagina de extrato)
+  if (qtdInfracoes > 0 || temMarcadorOcorrencia) {
     analise.status = "MULTAS";
     analise.temProblemas = true;
     analise.temMultas = true;
     analise.motivo = "Identificamos ocorrencias/multas no prontuario do condutor.";
+    return analise;
+  }
+
+  // Prioridade 3: NADA CONSTA somente quando nao houver qualquer marcador de ocorrencia
+  if (temFraseNadaConsta && !temMarcadorOcorrencia && qtdCassacao === 0 && qtdSuspensao === 0) {
+    analise.status = "OK";
+    analise.temProblemas = false;
+    analise.temMultas = false;
+    analise.motivo = "Nada consta no sistema de infracoes do DETRAN.";
     return analise;
   }
 
