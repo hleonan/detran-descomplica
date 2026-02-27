@@ -1025,25 +1025,25 @@
                 </div>
 
                 <div class="services-grid">
-                    <div class="service-card" onclick="selectService('certidao')">
+                  <div class="service-card" onclick="selectService('certidao', event)">
                         <div class="service-icon">📄</div>
                         <h3 class="service-title">Emitir Certidão Nada Consta</h3>
                         <p class="service-description">Documento oficial do DETRAN comprovando sua situação</p>
-                        <button class="btn-service" onclick="abrirCertidao()">Emitir Certidão</button>
+                        <button class="btn-service" onclick="selectService('certidao', event)">Emitir Certidão</button>
                     </div>
-                    <div class="service-card" onclick="goToScreen6()">
+                    <div class="service-card" onclick="selectService('multas', event)">
                         <div class="service-icon">📋</div>
                         <h3 class="service-title">Consultar Multas</h3>
                         <p class="service-description">Veja todas as suas multas com detalhes completos</p>
-                        <button class="btn-service" onclick="goToScreen6()">Ver Multas</button>
+                        <button class="btn-service" onclick="selectService('multas', event)">Ver Multas</button>
                     </div>
-                    <div class="service-card" onclick="selectService('suspensao')">
+                    <div class="service-card" onclick="selectService('suspensao', event)">
                         <div class="service-icon">⚖️</div>
                         <h3 class="service-title">Processo de Suspensão</h3>
                         <p class="service-description">Acompanhe processos de suspensão ou cassação</p>
                         <button class="btn-service">Consultar Processo</button>
                     </div>
-                    <div class="service-card" onclick="selectService('recurso')">
+                    <div class="service-card" onclick="selectService('recurso', event)">
                         <div class="service-icon">⚖️</div>
                         <h3 class="service-title">Defesa/Recurso</h3>
                         <p class="service-description">Protocole recurso de multas automaticamente</p>
@@ -1980,7 +1980,8 @@
         }
       }
 
-      function abrirCertidao() {
+      function abrirCertidao(event) {
+        if (event?.stopPropagation) event.stopPropagation();
         const cache = recuperarCertidaoCache();
         if (!cache) {
           alert("Use a consulta na tela inicial para gerar a certidão.");
@@ -1989,7 +1990,14 @@
 
         abrirCertidaoCompleta(cache.caseId, cache.pdfBase64);
       }
-      function selectService(s) { alert("Serviço selecionado: " + s); }
+      function selectService(s, event) {
+        if (event?.stopPropagation) event.stopPropagation();
+
+        if (s === "certidao") return abrirCertidao();
+        if (s === "multas") return goToScreen6();
+
+        alert("Serviço selecionado: " + s);
+      }
       function selectOtherService(s) { alert("Outro Serviço: " + s); }
       function showProfessionalLogin() { alert("Login Profissional em breve."); }
     </script>
