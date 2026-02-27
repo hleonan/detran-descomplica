@@ -232,7 +232,7 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
 // ROTA: Consultar Certidão (Detran)
 // =========================
 const certidaoStore = new Map();
-const CERTIDAO_TTL_MS = 30 * 60 * 1000;
+const CERTIDAO_TTL_MS = 60 * 60 * 1000;
 
 function cleanupCertidoes() {
   const now = Date.now();
@@ -311,6 +311,11 @@ router.post("/consultar-certidao", async (req, res) => {
 router.get("/certidao/:caseId", (req, res) => {
   const item = certidaoStore.get(req.params.caseId);
   if (!item) return res.status(404).send("Certidão expirada ou não encontrada.");
+
+  if (Date.now() - item.createdAt > CERTIDAO_TTL_MS) {
+    certidaoStore.delete(req.params.caseId);
+    return res.status(404).send("Certidão expirada ou não encontrada.");
+  }
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", 'inline; filename="certidao_nada_consta.pdf"');

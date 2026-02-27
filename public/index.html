@@ -1488,6 +1488,61 @@
         return new Blob([bytes], { type: mimeType });
       }
 
+      const CERTIDAO_CACHE_KEY = "__ultimaCertidao";
+      const CERTIDAO_CACHE_TTL_MS = 60 * 60 * 1000;
+
+      function salvarCertidaoCache(caseId, pdfBase64 = null) {
+        const payload = {
+          caseId: caseId || null,
+          pdfBase64: pdfBase64 || null,
+          createdAt: Date.now(),
+        };
+
+        window.__lastCaseId = payload.caseId;
+        window.__lastCertidaoBase64 = payload.pdfBase64;
+        window.__lastCertidaoCreatedAt = payload.createdAt;
+
+        try {
+          localStorage.setItem(CERTIDAO_CACHE_KEY, JSON.stringify(payload));
+        } catch (err) {
+          console.warn("Não foi possível salvar cache local da certidão.", err);
+        }
+      }
+
+      function recuperarCertidaoCache() {
+        const emMemoria = {
+          caseId: window.__lastCaseId || null,
+          pdfBase64: window.__lastCertidaoBase64 || null,
+          createdAt: window.__lastCertidaoCreatedAt || null,
+        };
+
+        if ((emMemoria.caseId || emMemoria.pdfBase64) && emMemoria.createdAt) {
+          if (Date.now() - emMemoria.createdAt <= CERTIDAO_CACHE_TTL_MS) return emMemoria;
+          window.__lastCaseId = null;
+          window.__lastCertidaoBase64 = null;
+          window.__lastCertidaoCreatedAt = null;
+        }
+
+        try {
+          const raw = localStorage.getItem(CERTIDAO_CACHE_KEY);
+          if (!raw) return null;
+          const cache = JSON.parse(raw);
+
+          if (!cache?.createdAt || Date.now() - cache.createdAt > CERTIDAO_CACHE_TTL_MS) {
+            localStorage.removeItem(CERTIDAO_CACHE_KEY);
+            return null;
+          }
+
+          window.__lastCaseId = cache.caseId || null;
+          window.__lastCertidaoBase64 = cache.pdfBase64 || null;
+          window.__lastCertidaoCreatedAt = cache.createdAt || null;
+          return cache;
+        } catch (err) {
+          localStorage.removeItem(CERTIDAO_CACHE_KEY);
+          return null;
+        }
+      }
+
       function abrirCertidaoCompleta(caseId, pdfBase64 = null) {
         if (pdfBase64) {
           const blob = base64ParaBlob(pdfBase64, "application/pdf");
@@ -1601,9 +1656,8 @@
           const btnSecondary = document.getElementById("btn-result-secondary");
           const nomeMotorista = data.nome ? `<strong>${data.nome}</strong>` : "Motorista";
 
-          // Salva caseId para uso posterior
-          window.__lastCaseId = data.caseId;
-          window.__lastCertidaoBase64 = data.pdfBase64 || null;
+          // Salva certidão para uso posterior (cache local por 1h)
+          salvarCertidaoCache(data.caseId, data.pdfBase64 || null);
         
           // ── CENÁRIO 4: MULTAS + SUSPENSÃO + CASSAÇÃO ──
           if (data.status === "CASSACAO" || data.temCassacao) {
@@ -1926,7 +1980,15 @@
         }
       }
 
-      function abrirCertidao() { alert("Use a consulta na tela inicial para gerar a certidão."); }
+      function abrirCertidao() {
+        const cache = recuperarCertidaoCache();
+        if (!cache) {
+          alert("Use a consulta na tela inicial para gerar a certidão.");
+          return;
+        }
+
+        abrirCertidaoCompleta(cache.caseId, cache.pdfBase64);
+      }
       function selectService(s) { alert("Serviço selecionado: " + s); }
       function selectOtherService(s) { alert("Outro Serviço: " + s); }
       function showProfessionalLogin() { alert("Login Profissional em breve."); }
