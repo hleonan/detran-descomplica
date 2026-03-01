@@ -39,15 +39,23 @@ class TwoCaptcha {
    * Upload de reCAPTCHA v2
    * @param {string} sitekey - Sitekey do reCAPTCHA
    * @param {string} pageUrl - URL da página com o reCAPTCHA
+   * @param {object} options - Opções adicionais (enterprise/invisible/userAgent)
    * @returns {Promise<string>} ID do CAPTCHA
    */
-  async uploadReCaptcha(sitekey, pageUrl) {
-    const url = `${this.baseUrl}/in.php?` +
-      `key=${encodeURIComponent(this.apiKey)}` +
-      `&method=userrecaptcha` +
-      `&googlekey=${encodeURIComponent(sitekey)}` +
-      `&pageurl=${encodeURIComponent(pageUrl)}` +
-      `&json=1`;
+  async uploadReCaptcha(sitekey, pageUrl, options = {}) {
+    const params = new URLSearchParams({
+      key: this.apiKey,
+      method: 'userrecaptcha',
+      googlekey: sitekey,
+      pageurl: pageUrl,
+      json: '1'
+    });
+
+    if (options.enterprise) params.set('enterprise', '1');
+    if (options.invisible) params.set('invisible', '1');
+    if (options.userAgent) params.set('userAgent', options.userAgent);
+
+    const url = `${this.baseUrl}/in.php?${params.toString()}`;
 
     const response = await fetch(url);
     const data = await response.json();

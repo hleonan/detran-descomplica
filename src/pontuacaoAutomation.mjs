@@ -10,6 +10,8 @@ class PontuacaoAutomation {
   constructor(apiKey2Captcha) {
     this.twoCaptcha = new TwoCaptcha(apiKey2Captcha);
     this.browser = null;
+    this.cpf = '';
+    this.cnh = '';
   }
 
   async consultarPontuacao(cpf, cnh, uf = 'RJ') {
@@ -45,20 +47,14 @@ class PontuacaoAutomation {
         timeout: 45000
       });
 
-      await page.fill('input[name="cpf"]', cpf);
-      await page.fill('input[name="cnh"]', cnh);
+      this.cpf = String(cpf || '');
+      this.cnh = String(cnh || '');
+
+      await page.fill('input[name="cpf"]', this.cpf);
+      await page.fill('input[name="cnh"]', this.cnh);
       await page.selectOption('select[name="uf"]', uf || 'RJ');
 
-      console.log('[MULTAS] Resolvendo CAPTCHA...');
-      const captchaToken = await this.resolverCaptcha(page);
-      if (!captchaToken) throw new Error('Falha ao resolver CAPTCHA');
-
-      await Promise.all([
-        page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
-        page.click('button[type="submit"]')
-      ]);
-
-      const resultado = await this.capturarResultado(page);
+      const resultado = await this.enviarConsultaComRetryCaptcha(page);
 
       await context.close();
       await this.browser.close();
@@ -72,6 +68,56 @@ class PontuacaoAutomation {
     }
   }
 
+  async enviarConsultaComRetryCaptcha(page) {
+    let ultimaErro = null;
+
+    for (let tentativa = 1; tentativa <= 2; tentativa += 1) {
+      try {
+        await this.prepararFormularioConsulta(page);
+
+        console.log(`[MULTAS] Resolvendo CAPTCHA (tentativa ${tentativa}/2)...`);
+        const captchaToken = await this.resolverCaptcha(page);
+        if (!captchaToken) throw new Error('Falha ao resolver CAPTCHA');
+
+        await Promise.all([
+          page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
+          page.click('button[type="submit"]')
+        ]);
+
+        const resultado = await this.capturarResultado(page);
+        if (resultado.sucesso) return resultado;
+
+        if (!this.ehErroCaptcha(resultado.erro) || tentativa === 2) {
+          return resultado;
+        }
+
+        ultimaErro = resultado.erro;
+        console.warn('[MULTAS] CAPTCHA rejeitado pelo DETRAN, nova tentativa...');
+      } catch (err) {
+        ultimaErro = err?.message || String(err);
+        if (tentativa === 2) throw err;
+      }
+
+      await page.goto('http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
+    }
+
+    throw new Error(ultimaErro || 'Falha ao consultar multas.');
+  }
+
+  async prepararFormularioConsulta(page) {
+    await page.waitForSelector('input[name="cpf"]', { timeout: 15000 });
+    await page.fill('input[name="cpf"]', this.cpf);
+    await page.fill('input[name="cnh"]', this.cnh);
+    await page.selectOption('select[name="uf"]', 'RJ');
+  }
+
+  ehErroCaptcha(mensagem = '') {
+    return /captcha|recaptcha|não sou robô|nao sou robo|token/i.test(String(mensagem || ''));
+  }
+
   async resolverCaptcha(page) {
     try {
       const captchaElement = await page.$('iframe[src*="recaptcha"]');
@@ -81,38 +127,61 @@ class PontuacaoAutomation {
         if (imagemCaptcha) {
           const screenshot = await imagemCaptcha.screenshot();
           const captchaId = await this.twoCaptcha.uploadCaptcha(screenshot);
-          const token = await this.twoCaptcha.obterResultado(captchaId);
-          return token;
+          return this.twoCaptcha.obterResultado(captchaId);
         }
         return null;
       }
 
-      const sitekey = await page.evaluate(() => {
+      const captchaInfo = await page.evaluate(() => {
         const iframe = document.querySelector('iframe[src*="recaptcha"]');
         const src = iframe?.src || '';
-        const match = src.match(/k=([^&]+)/);
-        return match ? match[1] : null;
+        const fromIframe = src.match(/[?&]k=([^&]+)/)?.[1] || null;
+
+        const widget = document.querySelector('.g-recaptcha, [data-sitekey]');
+        const fromDataSitekey = widget?.getAttribute('data-sitekey') || null;
+        const callbackName = widget?.getAttribute('data-callback') || null;
+        const enterprise = /enterprise/i.test(src) || !!document.querySelector('script[src*="recaptcha/enterprise"]');
+        const invisible = widget?.getAttribute('data-size') === 'invisible';
+
+        return {
+          sitekey: fromDataSitekey || fromIframe,
+          callbackName,
+          enterprise,
+          invisible
+        };
       });
 
-      if (!sitekey) {
+      if (!captchaInfo?.sitekey) {
         throw new Error('Não foi possível extrair o sitekey do reCAPTCHA');
       }
 
       const captchaId = await this.twoCaptcha.uploadReCaptcha(
-        sitekey,
-        'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
+        captchaInfo.sitekey,
+        'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
+        {
+          enterprise: captchaInfo.enterprise,
+          invisible: captchaInfo.invisible,
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+        }
       );
 
       const token = await this.twoCaptcha.obterResultado(captchaId);
       
-      await page.evaluate((resolvedToken) => {
-        const responseField = document.getElementById('g-recaptcha-response');
-        if (responseField) {
-          responseField.innerHTML = resolvedToken;
-          responseField.value = resolvedToken;
-        }
-      }, token);
+      await page.evaluate(({ resolvedToken, callbackName }) => {
+        const responseFields = document.querySelectorAll('#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+        responseFields.forEach((field) => {
+          field.innerHTML = resolvedToken;
+          field.value = resolvedToken;
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
+        });
 
+        if (callbackName && typeof window[callbackName] === 'function') {
+          window[callbackName](resolvedToken);
+        }
+      }, { resolvedToken: token, callbackName: captchaInfo.callbackName });
+
+      await page.waitForTimeout(300);
       return token;
     } catch (error) {
       console.error('Erro ao resolver CAPTCHA:', error);
