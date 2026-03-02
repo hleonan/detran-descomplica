@@ -1917,6 +1917,10 @@
           return "Portal de multas do DETRAN-RJ indisponível para consulta automática neste momento. Tente novamente em alguns minutos.";
         }
 
+        if (/page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(msg)) {
+          return "Falha temporária ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos.";
+        }
+
         if (msgLimpa) return msgLimpa;
         return "Erro ao consultar multas.";
       }

@@ -117,6 +117,8 @@ class PontuacaoAutomation {
     const mensagemErro = (err) => String(err?.message || err || '');
     const ehErroConexaoPortalMultas = (msg = '') =>
       /(ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_RESET|ERR_INTERNET_DISCONNECTED)/i.test(msg);
+    const ehInterrupcaoNavegacao = (msg = '') =>
+      /is interrupted by another navigation|navigation interrupted/i.test(msg);
 
     const confirmarPortalOffline = async () => {
       const urls = [
@@ -156,32 +158,33 @@ class PontuacaoAutomation {
       throw new Error(`Falha ao acessar o portal de multas do DETRAN-RJ. ${mensagemOriginal}`.trim());
     };
 
-    const resetarPagina = async () => {
-      try {
-        await page.goto('about:blank', { waitUntil: 'load', timeout: 8000 });
-      } catch (e) {}
-    };
-
     for (const url of tentativasDiretas) {
-      await resetarPagina();
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector('input[name="cpf"]', { timeout: 12000 });
         this.consultaUrl = page.url();
         return;
       } catch (err) {
+        const msg = mensagemErro(err);
+
+        if (ehInterrupcaoNavegacao(msg)) {
+          await page.waitForTimeout(1200);
+          if (await estaNaTelaConsulta()) {
+            this.consultaUrl = page.url();
+            return;
+          }
+        }
+
         if (await estaNaTelaConsulta()) {
           this.consultaUrl = page.url();
           return;
         }
-        const msg = mensagemErro(err);
         errosDiretos.push(msg);
         console.warn(`[MULTAS] Falha ao abrir URL direta ${url}:`, msg);
       }
     }
 
     // Fallback: navegação pelo site principal (card Infrações -> Consulta de Pontuação na CNH)
-    await resetarPagina();
     try {
       await page.goto('https://www.detran.rj.gov.br/menu/menu-infracoes.html', {
         waitUntil: 'domcontentloaded',
@@ -196,6 +199,25 @@ class PontuacaoAutomation {
       }
 
       const msg = mensagemErro(err);
+      if (ehInterrupcaoNavegacao(msg)) {
+        try {
+          await page.goto('https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+          });
+          await page.waitForSelector('input[name="cpf"]', { timeout: 10000 });
+          this.consultaUrl = page.url();
+          return;
+        } catch (err2) {
+          const msg2 = mensagemErro(err2);
+          errosDiretos.push(msg2);
+          if (await estaNaTelaConsulta()) {
+            this.consultaUrl = page.url();
+            return;
+          }
+        }
+      }
+
       if (ehErroConexaoPortalMultas(msg) || errosDiretos.some(ehErroConexaoPortalMultas)) {
         await talvezLancarOffline(msg);
       }

@@ -350,10 +350,13 @@ router.post("/consultar-multas", async (req, res) => {
   } catch (err) {
     console.error("Erro multas:", err);
     const mensagem = err?.message || "Erro ao consultar multas.";
-    const indisponivel = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout/i.test(mensagem);
+    const indisponivel = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|page\.goto|is interrupted by another navigation|Navigation to/i.test(mensagem);
+    const mensagemPublica = /page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(mensagem)
+      ? "Falha temporaria ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos."
+      : mensagem;
     return res.status(indisponivel ? 503 : 400).json({
       ok: false,
-      error: mensagem,
+      error: mensagemPublica,
       retryable: indisponivel,
     });
   }
