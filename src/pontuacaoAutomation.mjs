@@ -24,8 +24,7 @@ class PontuacaoAutomation {
           '--disable-setuid-sandbox',
           '--disable-blink-features=AutomationControlled',
           '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--single-process'
+          '--disable-gpu'
         ]
       });
 
@@ -93,7 +92,7 @@ class PontuacaoAutomation {
         console.warn('[MULTAS] CAPTCHA rejeitado pelo DETRAN, nova tentativa...');
       } catch (err) {
         ultimaErro = err?.message || String(err);
-        if (tentativa === 2) throw err;
+        if (/DETRAN_MULTAS_OFFLINE/i.test(ultimaErro) || tentativa === 2) throw err;
       }
 
       await this.abrirPaginaConsulta(page);
@@ -107,6 +106,7 @@ class PontuacaoAutomation {
       'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
       'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
     ];
+    const errosDiretos = [];
 
     const estaNaTelaConsulta = async () => {
       const urlAtual = page.url() || '';
@@ -114,7 +114,18 @@ class PontuacaoAutomation {
       return (await page.locator('input[name="cpf"]').count()) > 0;
     };
 
+    const mensagemErro = (err) => String(err?.message || err || '');
+    const ehErroConexaoPortalMultas = (msg = '') =>
+      /(ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_RESET|ERR_INTERNET_DISCONNECTED)/i.test(msg);
+
+    const resetarPagina = async () => {
+      try {
+        await page.goto('about:blank', { waitUntil: 'load', timeout: 8000 });
+      } catch (e) {}
+    };
+
     for (const url of tentativasDiretas) {
+      await resetarPagina();
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector('input[name="cpf"]', { timeout: 12000 });
@@ -125,11 +136,14 @@ class PontuacaoAutomation {
           this.consultaUrl = page.url();
           return;
         }
-        console.warn(`[MULTAS] Falha ao abrir URL direta ${url}:`, err?.message || err);
+        const msg = mensagemErro(err);
+        errosDiretos.push(msg);
+        console.warn(`[MULTAS] Falha ao abrir URL direta ${url}:`, msg);
       }
     }
 
     // Fallback: navegação pelo site principal (card Infrações -> Consulta de Pontuação na CNH)
+    await resetarPagina();
     try {
       await page.goto('https://www.detran.rj.gov.br/menu/menu-infracoes.html', {
         waitUntil: 'domcontentloaded',
@@ -137,7 +151,17 @@ class PontuacaoAutomation {
       });
     } catch (err) {
       // O portal pode redirecionar automaticamente para consultaPontuacao e interromper este goto.
-      if (!(await estaNaTelaConsulta())) throw err;
+      await page.waitForTimeout(1200);
+      if (await estaNaTelaConsulta()) {
+        this.consultaUrl = page.url();
+        return;
+      }
+
+      const msg = mensagemErro(err);
+      if (ehErroConexaoPortalMultas(msg) || errosDiretos.some(ehErroConexaoPortalMultas)) {
+        throw new Error('DETRAN_MULTAS_OFFLINE: portal de multas do DETRAN-RJ indisponivel no momento.');
+      }
+      throw err;
     }
 
     if (await estaNaTelaConsulta()) {
@@ -147,13 +171,30 @@ class PontuacaoAutomation {
 
     const linkConsulta = page.locator('a[href*="consultaPontuacao"], li:has-text("Consulta de Pontuação na CNH") a').first();
     if (!(await linkConsulta.count())) {
+      if (errosDiretos.some(ehErroConexaoPortalMultas)) {
+        throw new Error('DETRAN_MULTAS_OFFLINE: portal de multas do DETRAN-RJ indisponivel no momento.');
+      }
       throw new Error('Não foi possível localizar o link de Consulta de Pontuação na CNH no site do DETRAN.');
     }
 
-    await Promise.all([
-      page.waitForURL(/consultaPontuacao/i, { timeout: 30000 }),
-      linkConsulta.click({ timeout: 8000 })
-    ]);
+    try {
+      await Promise.all([
+        page.waitForURL(/consultaPontuacao/i, { timeout: 30000 }),
+        linkConsulta.click({ timeout: 8000 })
+      ]);
+    } catch (err) {
+      await page.waitForTimeout(1200);
+      if (await estaNaTelaConsulta()) {
+        this.consultaUrl = page.url();
+        return;
+      }
+
+      const msg = mensagemErro(err);
+      if (ehErroConexaoPortalMultas(msg) || errosDiretos.some(ehErroConexaoPortalMultas)) {
+        throw new Error('DETRAN_MULTAS_OFFLINE: portal de multas do DETRAN-RJ indisponivel no momento.');
+      }
+      throw err;
+    }
 
     await page.waitForSelector('input[name="cpf"]', { timeout: 12000 });
     this.consultaUrl = page.url();

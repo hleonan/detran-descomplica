@@ -301,7 +301,9 @@ router.post("/consultar-certidao", async (req, res) => {
 
   } catch (err) {
     console.error("Erro na consulta:", err);
-    return res.status(400).json({ ok: false, error: err.message || "Erro ao consultar DETRAN." });
+    const mensagem = err?.message || "Erro ao consultar DETRAN.";
+    const indisponivel = /2Captcha|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|ERR_CONNECTION|indisponivel/i.test(mensagem);
+    return res.status(indisponivel ? 503 : 400).json({ ok: false, error: mensagem });
   }
 });
 
@@ -347,7 +349,13 @@ router.post("/consultar-multas", async (req, res) => {
 
   } catch (err) {
     console.error("Erro multas:", err);
-    return res.status(400).json({ ok: false, error: err.message });
+    const mensagem = err?.message || "Erro ao consultar multas.";
+    const indisponivel = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout/i.test(mensagem);
+    return res.status(indisponivel ? 503 : 400).json({
+      ok: false,
+      error: mensagem,
+      retryable: indisponivel,
+    });
   }
 });
 
