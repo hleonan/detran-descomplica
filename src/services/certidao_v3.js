@@ -537,7 +537,11 @@ export async function emitirCertidaoPDF(cpf, cnh) {
       textoUpperP1.includes("CONDUTOR") ||
       (textoUpperP1.includes("CPF") && textoPagina1.length > 200);
 
+    const textoP1Limpo = (textoPagina1 || "").replace(/\s+/g, " ").trim();
     if (!temConteudoMinimo) {
+      if (textoP1Limpo.length < 120) {
+        throw new Error("DETRAN_RETRYABLE: Pagina de resultado sem conteudo suficiente (possivel tela em branco/intermitencia).");
+      }
       console.warn("[DETRAN] Pagina sem conteudo totalmente reconhecivel. Seguiremos com a certidao para analise conservadora.");
     }
 
@@ -546,6 +550,9 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     // -- Screenshot da Pagina 1 --
     console.log("[DETRAN] Capturando screenshot da Pagina 1...");
     const screenshotPag1 = await page.screenshot({ fullPage: true, type: "png" });
+    if (!screenshotPag1 || screenshotPag1.length < 12000) {
+      throw new Error("DETRAN_RETRYABLE: Screenshot da pagina 1 veio vazio ou muito pequeno.");
+    }
 
     // ============================================================
     // 7. CLICAR NO "EXTRATO COMPLETO" (Pagina 2)

@@ -1625,12 +1625,15 @@
             const msgErro = data.error || "Erro desconhecido";
             
             // Se o backend disser que é falha do Detran/Dados, mostra tela amigável
+            const erroDados = /recusou os dados|verifique cpf e cnh|cpf inválido|cpf invalido|cnh inválida|cnh invalida|obrigatórios|obrigatorios/i.test(msgErro);
             const erroDetran =
-              Boolean(data.retryable) ||
-              resp.status === 503 ||
-              msgErro.includes("DETRAN_FAIL") ||
-              msgErro.includes("Timeout") ||
-              /timeout|2Captcha|ERR_CONNECTION|navigation|indispon/i.test(msgErro);
+              !erroDados &&
+              (
+                Boolean(data.retryable) ||
+                resp.status === 503 ||
+                msgErro.includes("Timeout") ||
+                /timeout|2Captcha|ERR_CONNECTION|navigation|indispon|DETRAN_RETRYABLE/i.test(msgErro)
+              );
 
             if (erroDetran) {
                 const icon = document.getElementById("result-icon");
