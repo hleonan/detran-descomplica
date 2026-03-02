@@ -241,6 +241,17 @@ function cleanupCertidoes() {
   }
 }
 
+function isErroDadosCertidao(mensagem = "") {
+  return /recusou os dados|verifique cpf e cnh|cpf invalido|cnh invalida|obrigatorios/i.test(String(mensagem));
+}
+
+function isErroCertidaoRetryable(mensagem = "") {
+  const msg = String(mensagem || "");
+  if (isErroDadosCertidao(msg)) return false;
+
+  return /DETRAN_FAIL|2Captcha|timeout|timed out|ERR_CONNECTION|net::|ECONNRESET|ETIMEDOUT|ENOTFOUND|navigation|Target closed|Execution context was destroyed|Protocol error|indisponivel|captcha/i.test(msg);
+}
+
 router.post("/consultar-certidao", async (req, res) => {
   try {
     cleanupCertidoes();
@@ -260,9 +271,33 @@ router.post("/consultar-certidao", async (req, res) => {
       status: "DESCONHECIDO",
     });
 
-    // Chama a automação do Playwright
-    // AGORA RETORNA { pdfBuffer, analise } em vez de só pdfBuffer
-    const resultado = await emitirCertidaoPDF(cpfDigits, cnhDigits);
+    // Chama a automação do Playwright com retry para instabilidades transitórias.
+    let resultado;
+    let ultimoErro;
+    const maxTentativas = 2;
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+      try {
+        resultado = await emitirCertidaoPDF(cpfDigits, cnhDigits);
+        break;
+      } catch (err) {
+        ultimoErro = err;
+        const mensagemErro = err?.message || String(err);
+        const retryable = isErroCertidaoRetryable(mensagemErro);
+
+        console.warn(`[DETRAN] Falha na consulta de certidao (tentativa ${tentativa}/${maxTentativas}): ${mensagemErro}`);
+
+        if (!retryable || tentativa === maxTentativas) {
+          throw err;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
+      }
+    }
+
+    if (!resultado) {
+      throw ultimoErro || new Error("Falha ao consultar DETRAN.");
+    }
+
     const { pdfBuffer, analise } = resultado;
 
     // ATUALIZAR LEAD com dados da certidão (extraídos do HTML, não do PDF)
@@ -302,8 +337,12 @@ router.post("/consultar-certidao", async (req, res) => {
   } catch (err) {
     console.error("Erro na consulta:", err);
     const mensagem = err?.message || "Erro ao consultar DETRAN.";
-    const indisponivel = /2Captcha|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|ERR_CONNECTION|indisponivel/i.test(mensagem);
-    return res.status(indisponivel ? 503 : 400).json({ ok: false, error: mensagem });
+    const indisponivel = isErroCertidaoRetryable(mensagem);
+    return res.status(indisponivel ? 503 : 400).json({
+      ok: false,
+      error: mensagem,
+      retryable: indisponivel,
+    });
   }
 });
 

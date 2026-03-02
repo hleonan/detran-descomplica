@@ -1480,6 +1480,15 @@
         throw ultimoErro;
       }
 
+      function deveRepetirConsultaCertidao(httpStatus, payload) {
+        const msg = String(payload?.error || "");
+        return Boolean(
+          payload?.retryable ||
+          httpStatus === 503 ||
+          /DETRAN_FAIL|Timeout|timeout|2Captcha|ERR_CONNECTION|navigation|indispon/i.test(msg)
+        );
+      }
+
       function base64ParaBlob(base64, mimeType = "application/pdf") {
         const bin = atob(base64);
         const len = bin.length;
@@ -1579,13 +1588,33 @@
         }
        
         try {
-          const resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits, origem: origemDados }),
-          });
-       
-          const data = await resp.json();
+          let resp;
+          let data;
+          const maxTentativasConsulta = 2;
+
+          for (let tentativa = 1; tentativa <= maxTentativasConsulta; tentativa++) {
+            resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits, origem: origemDados }),
+            });
+
+            try {
+              data = await resp.json();
+            } catch (e) {
+              data = { ok: false, error: "Resposta invalida do servidor." };
+            }
+
+            if (resp.ok && data.ok) break;
+
+            if (tentativa < maxTentativasConsulta && deveRepetirConsultaCertidao(resp.status, data)) {
+              updateLoadingMessage(`Instabilidade na consulta. Tentando novamente (${tentativa + 1}/${maxTentativasConsulta})...`);
+              await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
+              continue;
+            }
+
+            break;
+          }
           
           // ========================================================
           // TRATAMENTO DE ERRO COM WHATSAPP (MODIFICADO)
@@ -1596,7 +1625,12 @@
             const msgErro = data.error || "Erro desconhecido";
             
             // Se o backend disser que é falha do Detran/Dados, mostra tela amigável
-            const erroDetran = msgErro.includes("DETRAN_FAIL") || msgErro.includes("Timeout");
+            const erroDetran =
+              Boolean(data.retryable) ||
+              resp.status === 503 ||
+              msgErro.includes("DETRAN_FAIL") ||
+              msgErro.includes("Timeout") ||
+              /timeout|2Captcha|ERR_CONNECTION|navigation|indispon/i.test(msgErro);
 
             if (erroDetran) {
                 const icon = document.getElementById("result-icon");
