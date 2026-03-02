@@ -1909,6 +1909,18 @@
       // ==========================================
       // CONSULTAR MULTAS
       // ==========================================
+      function formatarErroMultas(data, statusCode) {
+        const msg = String(data?.error || "").trim();
+        const msgLimpa = msg.replace(/^DETRAN_MULTAS_OFFLINE:\s*/i, "");
+
+        if (data?.retryable || statusCode === 503 || /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_|timeout|2Captcha/i.test(msg)) {
+          return "Portal de multas do DETRAN-RJ indisponível para consulta automática neste momento. Tente novamente em alguns minutos.";
+        }
+
+        if (msgLimpa) return msgLimpa;
+        return "Erro ao consultar multas.";
+      }
+
       async function consultarMultas() {
         const cpf = document.getElementById("cpf")?.value?.replace(/\D/g, "");
         const cnh = document.getElementById("cnh")?.value?.replace(/\D/g, "");
@@ -1930,7 +1942,7 @@
           document.getElementById("multas-loading").style.display = "none";
 
           if (!data.ok) {
-            document.getElementById("multas-subtitle").innerText = data.error || "Erro ao consultar multas.";
+            document.getElementById("multas-subtitle").innerText = formatarErroMultas(data, resp.status);
             return;
           }
 
