@@ -12,6 +12,7 @@ class PontuacaoAutomation {
     this.browser = null;
     this.cpf = '';
     this.cnh = '';
+    this.consultaUrl = 'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao';
   }
 
   async consultarPontuacao(cpf, cnh, uf = 'RJ') {
@@ -42,10 +43,7 @@ class PontuacaoAutomation {
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
       });
 
-      await page.goto('http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
-        waitUntil: 'domcontentloaded',
-        timeout: 45000
-      });
+      await this.abrirPaginaConsulta(page);
 
       this.cpf = String(cpf || '');
       this.cnh = String(cnh || '');
@@ -77,7 +75,7 @@ class PontuacaoAutomation {
 
         console.log(`[MULTAS] Resolvendo CAPTCHA (tentativa ${tentativa}/2)...`);
         const captchaToken = await this.resolverCaptcha(page);
-        if (!captchaToken) throw new Error('Falha ao resolver CAPTCHA');
+        if (!captchaToken) throw new Error('Falha ao resolver CAPTCHA (token não retornado pelo serviço).');
 
         await Promise.all([
           page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
@@ -98,13 +96,47 @@ class PontuacaoAutomation {
         if (tentativa === 2) throw err;
       }
 
-      await page.goto('http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
-        waitUntil: 'domcontentloaded',
-        timeout: 45000
-      });
+      await this.abrirPaginaConsulta(page);
     }
 
     throw new Error(ultimaErro || 'Falha ao consultar multas.');
+  }
+
+  async abrirPaginaConsulta(page) {
+    const tentativasDiretas = [
+      'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
+      'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
+    ];
+
+    for (const url of tentativasDiretas) {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.waitForSelector('input[name="cpf"]', { timeout: 12000 });
+        this.consultaUrl = page.url();
+        return;
+      } catch (err) {
+        console.warn(`[MULTAS] Falha ao abrir URL direta ${url}:`, err?.message || err);
+      }
+    }
+
+    // Fallback: navegação pelo site principal (card Infrações -> Consulta de Pontuação na CNH)
+    await page.goto('https://www.detran.rj.gov.br/menu/menu-infracoes.html', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45000
+    });
+
+    const linkConsulta = page.locator('a[href*="consultaPontuacao"], li:has-text("Consulta de Pontuação na CNH") a').first();
+    if (!(await linkConsulta.count())) {
+      throw new Error('Não foi possível localizar o link de Consulta de Pontuação na CNH no site do DETRAN.');
+    }
+
+    await Promise.all([
+      page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
+      linkConsulta.click({ timeout: 8000 })
+    ]);
+
+    await page.waitForSelector('input[name="cpf"]', { timeout: 12000 });
+    this.consultaUrl = page.url();
   }
 
   async prepararFormularioConsulta(page) {
@@ -157,7 +189,7 @@ class PontuacaoAutomation {
 
       const captchaId = await this.twoCaptcha.uploadReCaptcha(
         captchaInfo.sitekey,
-        'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
+        this.consultaUrl || page.url() || 'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
         {
           enterprise: captchaInfo.enterprise,
           invisible: captchaInfo.invisible,
