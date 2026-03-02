@@ -108,6 +108,12 @@ class PontuacaoAutomation {
       'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
     ];
 
+    const estaNaTelaConsulta = async () => {
+      const urlAtual = page.url() || '';
+      if (!/consultaPontuacao/i.test(urlAtual)) return false;
+      return (await page.locator('input[name="cpf"]').count()) > 0;
+    };
+
     for (const url of tentativasDiretas) {
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -115,15 +121,29 @@ class PontuacaoAutomation {
         this.consultaUrl = page.url();
         return;
       } catch (err) {
+        if (await estaNaTelaConsulta()) {
+          this.consultaUrl = page.url();
+          return;
+        }
         console.warn(`[MULTAS] Falha ao abrir URL direta ${url}:`, err?.message || err);
       }
     }
 
     // Fallback: navegação pelo site principal (card Infrações -> Consulta de Pontuação na CNH)
-    await page.goto('https://www.detran.rj.gov.br/menu/menu-infracoes.html', {
-      waitUntil: 'domcontentloaded',
-      timeout: 45000
-    });
+    try {
+      await page.goto('https://www.detran.rj.gov.br/menu/menu-infracoes.html', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
+    } catch (err) {
+      // O portal pode redirecionar automaticamente para consultaPontuacao e interromper este goto.
+      if (!(await estaNaTelaConsulta())) throw err;
+    }
+
+    if (await estaNaTelaConsulta()) {
+      this.consultaUrl = page.url();
+      return;
+    }
 
     const linkConsulta = page.locator('a[href*="consultaPontuacao"], li:has-text("Consulta de Pontuação na CNH") a').first();
     if (!(await linkConsulta.count())) {
@@ -131,7 +151,7 @@ class PontuacaoAutomation {
     }
 
     await Promise.all([
-      page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
+      page.waitForURL(/consultaPontuacao/i, { timeout: 30000 }),
       linkConsulta.click({ timeout: 8000 })
     ]);
 
