@@ -76,6 +76,10 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function isErroMultasRetryable(mensagem = "") {
+  return /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::/i.test(String(mensagem || ""));
+}
+
 function extrairCpfCnhDoTexto(texto = "") {
   const textoSeguro = String(texto || "");
 
@@ -405,10 +409,32 @@ router.post("/consultar-multas", async (req, res) => {
 
     if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
 
-    const automation = new PontuacaoAutomation(apiKey);
-    const resultado = await automation.consultarPontuacao(cpfDigits, cnhDigits, "RJ");
+    let resultado = null;
+    let ultimoErro = null;
+    const maxTentativas = 2;
 
-    if (!resultado.sucesso) throw new Error(resultado.erro || "Falha ao consultar multas.");
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+      try {
+        const automation = new PontuacaoAutomation(apiKey);
+        resultado = await automation.consultarPontuacao(cpfDigits, cnhDigits, "RJ");
+        if (!resultado?.sucesso) throw new Error(resultado?.erro || "Falha ao consultar multas.");
+        break;
+      } catch (err) {
+        ultimoErro = err;
+        const mensagemErro = err?.message || String(err);
+        const retryable = isErroMultasRetryable(mensagemErro);
+
+        console.warn(`[MULTAS] Falha na consulta (tentativa ${tentativa}/${maxTentativas}): ${mensagemErro}`);
+
+        if (!retryable || tentativa === maxTentativas) {
+          throw err;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1500 * tentativa));
+      }
+    }
+
+    if (!resultado?.sucesso) throw ultimoErro || new Error("Falha ao consultar multas.");
 
     return res.json({
       ok: true,
@@ -419,8 +445,10 @@ router.post("/consultar-multas", async (req, res) => {
   } catch (err) {
     console.error("Erro multas:", err);
     const mensagem = err?.message || "Erro ao consultar multas.";
-    const indisponivel = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|page\.goto|is interrupted by another navigation|Navigation to/i.test(mensagem);
-    const mensagemPublica = /page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(mensagem)
+    const indisponivel = isErroMultasRetryable(mensagem);
+    const mensagemPublica = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED/i.test(mensagem)
+      ? "Falha ao acessar o portal de multas do DETRAN-RJ a partir do servidor. Tente novamente em alguns minutos."
+      : /page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(mensagem)
       ? "Falha temporaria ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos."
       : mensagem;
     return res.status(indisponivel ? 503 : 400).json({
