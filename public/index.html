@@ -684,23 +684,6 @@
         .detalhe-label { font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
         .detalhe-value { font-size: 15px; color: #003D7A; font-weight: 700; line-height: 1.4; }
 
-        .multa-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-
-        .btn-recorrer {
-            background: linear-gradient(135deg, #00D4FF 0%, #0099CC 100%);
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            flex: 1;
-            min-width: 150px;
-        }
-        .btn-recorrer:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4); }
-
         .multas-empty { text-align: center; padding: 60px 20px; }
         .multas-empty-icon { font-size: 80px; margin-bottom: 20px; }
         .multas-empty-title { font-size: 24px; color: #003D7A; font-weight: 700; margin-bottom: 10px; }
@@ -2063,9 +2046,6 @@
                   <div class="multa-detalhe"><span class="detalhe-label">Processo</span><span class="detalhe-value">${escapeHtml(campo(m.processo))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Valor</span><span class="detalhe-value">${escapeHtml(campo(m.valor))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Valor com Desconto</span><span class="detalhe-value">${escapeHtml(campo(m.valorComDesconto))}</span></div>
-                </div>
-                <div class="multa-actions">
-                  <button class="btn-recorrer" onclick="selectService('recurso')">Recorrer</button>
                 </div>
               </div>`;
           });
