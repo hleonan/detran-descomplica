@@ -580,6 +580,28 @@ class PontuacaoAutomation {
         return safe(match?.[1] || '');
       };
 
+      const extrairPontos = (texto, responsavelPontos) => {
+        const candidatosNumericos = Array.from(
+          String(texto || '').matchAll(/(?:^|\s)Pontos\s*:\s*([0-9]{1,3}|\*)\b/gi)
+        )
+          .map((m) => safe(m?.[1] || ''))
+          .filter((v) => v && v !== '-');
+
+        if (candidatosNumericos.length) {
+          return candidatosNumericos[candidatosNumericos.length - 1];
+        }
+
+        const bruto = String(texto || '').match(/(?:^|\s)Pontos\s*:\s*([^\n\r]+)/i)?.[1] || '';
+        const valorBruto = safe(bruto);
+        const resp = safe(responsavelPontos);
+
+        if (resp !== '-' && valorBruto.toUpperCase() === resp.toUpperCase()) {
+          return '-';
+        }
+
+        return valorBruto || '-';
+      };
+
       const paineis = Array.from(document.querySelectorAll('#accordion .panel'));
       if (!paineis.length) return [];
 
@@ -599,7 +621,7 @@ class PontuacaoAutomation {
         const infracao = extrair(texto, r.infracao);
         const enquadramento = extrair(texto, r.enquadramento);
         const vencimento = extrair(texto, r.vencimento);
-        const pontos = extrair(texto, r.pontos);
+        const pontos = extrairPontos(texto, responsavelPontos);
         const processo = extrair(texto, r.processo);
         const valor = extrair(texto, r.valor);
         const valorComDesconto = extrair(texto, r.valorComDesconto);
