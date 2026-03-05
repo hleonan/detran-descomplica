@@ -101,7 +101,10 @@ function getCachedMultas(cpf, cnh) {
 }
 
 function isErroMultasRetryable(mensagem = "") {
-  return /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::|captcha|token não retornado/i.test(String(mensagem || ""));
+  const normalizada = String(mensagem || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::|captcha|token nao retornado/i.test(normalizada);
 }
 
 async function executarConsultaMultasComRetry(cpfDigits, cnhDigits, apiKey) {
@@ -532,12 +535,15 @@ router.post("/consultar-multas", async (req, res) => {
   } catch (err) {
     console.error("Erro multas:", err);
     const mensagem = err?.message || "Erro ao consultar multas.";
+    const mensagemNormalizada = String(mensagem || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
     const indisponivel = isErroMultasRetryable(mensagem);
     const mensagemPublica = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED/i.test(mensagem)
       ? "Falha ao acessar o portal de multas do DETRAN-RJ a partir do servidor. Tente novamente em alguns minutos."
       : /page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(mensagem)
       ? "Falha temporaria ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos."
-      : /captcha|token não retornado/i.test(mensagem)
+      : /captcha|token nao retornado/i.test(mensagemNormalizada)
       ? "Falha temporária na validação automática do CAPTCHA. Tente novamente em alguns instantes."
       : mensagem;
     return res.status(indisponivel ? 503 : 400).json({

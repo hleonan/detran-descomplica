@@ -1895,6 +1895,9 @@
       function formatarErroMultas(data, statusCode) {
         const msg = String(data?.error || "").trim();
         const msgLimpa = msg.replace(/^DETRAN_MULTAS_OFFLINE:\s*/i, "");
+        const msgNormalizada = msg
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "");
 
         if (/DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED/i.test(msg)) {
           return "Não foi possível acessar o portal de multas do DETRAN-RJ a partir do servidor neste momento. Tente novamente em alguns minutos.";
@@ -1904,7 +1907,7 @@
           return "Falha temporária na consulta automática de multas. Tente novamente em alguns minutos.";
         }
 
-        if (/captcha|token não retornado|nao retornado/i.test(msg)) {
+        if (/captcha|token nao retornado/i.test(msgNormalizada)) {
           return "Falha temporária na validação do CAPTCHA do DETRAN-RJ. Tente novamente em alguns instantes.";
         }
 
