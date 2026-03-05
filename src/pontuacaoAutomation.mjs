@@ -468,38 +468,85 @@ class PontuacaoAutomation {
         .map((b) => b.trim())
         .filter((b) => /N[ºo]\s*Auto\s*:/i.test(b));
 
-      const parseCampo = (bloco, regex) => {
-        const m = bloco.match(regex);
-        return m?.[1]?.trim() || '';
+      const normalizar = (valor) =>
+        String(valor || '')
+          .replace(/\s+/g, ' ')
+          .replace(/\u00A0/g, ' ')
+          .trim();
+
+      const safeValor = (valor) => {
+        const limpo = normalizar(valor);
+        if (!limpo || /^[-–—]+$/.test(limpo)) return '-';
+        return limpo;
+      };
+
+      const r = {
+        auto: 'N[º°o]\\s*Auto',
+        data: 'Data',
+        orgao: 'Org[aã]o',
+        placa: 'Placa',
+        proprietario: 'Propriet[aá]rio',
+        responsavel: 'Resp\\.?\\s*Pontos',
+        situacao: 'Situa[cç][aã]o',
+        local: 'Local',
+        infracao: 'Infra[cç][aã]o',
+        enquadramento: 'Enquadramento',
+        vencimento: 'Vencimento',
+        pontos: 'Pontos',
+        processo: 'Processo',
+        valorComDesconto: 'Valor\\s+com\\s+desconto',
+        valor: 'Valor(?!\\s+com\\s+desconto)'
+      };
+
+      const todosRotulos = Object.values(r);
+
+      const extrairCampoPorRotulo = (bloco, rotulo) => {
+        const proximos = todosRotulos.filter((item) => item !== rotulo).join('|');
+        const regex = new RegExp(`${rotulo}\\s*:\\s*([\\s\\S]*?)(?=\\s*(?:${proximos})\\s*:|$)`, 'i');
+        const match = bloco.match(regex);
+        return safeValor(match?.[1] || '');
       };
 
       const dados = blocos.map((bloco) => {
-        const auto = parseCampo(bloco, /N[ºo]\s*Auto\s*:\s*([^\n]+)/i);
-        const dataHora = parseCampo(bloco, /Data\s*:\s*([^\n]+)/i);
-        const orgao = parseCampo(bloco, /Org[aã]o\s*:\s*([^\n]+)/i);
-        const placa = parseCampo(bloco, /Placa\s*:\s*([^\n]+)/i);
-        const proprietario = parseCampo(bloco, /Propriet[aá]rio\s*:\s*([^\n]+)/i);
-        const responsavel = parseCampo(bloco, /Resp\.\s*Pontos\s*:\s*([^\n]+)/i);
+        const auto = extrairCampoPorRotulo(bloco, r.auto);
+        const dataHora = extrairCampoPorRotulo(bloco, r.data);
+        const orgao = extrairCampoPorRotulo(bloco, r.orgao);
+        const placa = extrairCampoPorRotulo(bloco, r.placa);
+        const proprietario = extrairCampoPorRotulo(bloco, r.proprietario);
+        const responsavel = extrairCampoPorRotulo(bloco, r.responsavel);
+        const situacao = extrairCampoPorRotulo(bloco, r.situacao);
+        const local = extrairCampoPorRotulo(bloco, r.local);
+        const infracao = extrairCampoPorRotulo(bloco, r.infracao);
+        const enquadramento = extrairCampoPorRotulo(bloco, r.enquadramento);
+        const vencimento = extrairCampoPorRotulo(bloco, r.vencimento);
+        const pontos = extrairCampoPorRotulo(bloco, r.pontos);
+        const processo = extrairCampoPorRotulo(bloco, r.processo);
+        const valor = extrairCampoPorRotulo(bloco, r.valor);
+        const valorComDesconto = extrairCampoPorRotulo(bloco, r.valorComDesconto);
 
-        const descricao = [
-          auto ? `Auto ${auto}` : '',
-          orgao ? `Órgão: ${orgao}` : '',
-          placa ? `Placa: ${placa}` : '',
-          proprietario ? `Proprietário: ${proprietario}` : '',
-          responsavel ? `Resp. Pontos: ${responsavel}` : ''
-        ].filter(Boolean).join(' • ');
+        let status = 'Pendente';
+        if (/paga|quitad|liquid/i.test(situacao)) status = 'Pago';
+        if (/cancelad/i.test(situacao)) status = 'Cancelada';
+        if (/suspens/i.test(situacao)) status = 'Suspensa';
 
         return {
-          data: dataHora || '-',
-          descricao: descricao || bloco.slice(0, 200),
-          pontos: '-',
-          valor: '-',
-          status: 'Pendente',
-          numeroAuto: auto || null,
-          orgao: orgao || null,
-          placa: placa || null,
-          proprietario: proprietario || null,
-          responsavelPontos: responsavel || null
+          data: dataHora,
+          descricao: infracao !== '-' ? infracao : bloco.slice(0, 200),
+          pontos,
+          valor,
+          valorComDesconto,
+          status,
+          numeroAuto: auto,
+          orgao,
+          placa,
+          proprietario,
+          responsavelPontos: responsavel,
+          situacao,
+          local,
+          infracao,
+          enquadramento,
+          vencimento,
+          processo
         };
       });
 
@@ -515,7 +562,19 @@ class PontuacaoAutomation {
               descricao: cells[1] || 'Infração de trânsito',
               pontos: cells[2] || '-',
               valor: cells[3] || '-',
-              status: cells[4] || 'Pendente'
+              valorComDesconto: '-',
+              status: cells[4] || 'Pendente',
+              numeroAuto: null,
+              orgao: '-',
+              placa: '-',
+              proprietario: '-',
+              responsavelPontos: '-',
+              situacao: '-',
+              local: '-',
+              infracao: cells[1] || '-',
+              enquadramento: '-',
+              vencimento: '-',
+              processo: '-'
             };
           })
           .filter(Boolean);
