@@ -49,6 +49,7 @@ try {
 
 const ocrJobStore = new Map();
 const OCR_TTL_MS = 20 * 60 * 1000;
+const DEFAULT_OCR_BUCKET = "detran-descomplica-ocr";
 
 function cleanupOCRJobs() {
   const now = Date.now();
@@ -68,7 +69,7 @@ function getOcrBucketName() {
     process.env.GOOGLE_CLOUD_STORAGE_BUCKET ||
     process.env.BUCKET_NAME;
 
-  return bucketName?.trim() || null;
+  return bucketName?.trim() || DEFAULT_OCR_BUCKET;
 }
 
 function onlyDigits(value) {
@@ -98,19 +99,6 @@ function extrairCpfCnhDoTexto(texto = "") {
   return { cpf, cnh: cnh || null };
 }
 
-async function extrairCpfCnhPdfBuffer(buffer) {
-  try {
-    const pdfParseModule = await import("pdf-parse");
-    const pdfParse = pdfParseModule?.default || pdfParseModule;
-    const parsed = await pdfParse(buffer);
-    const texto = parsed?.text || "";
-    return extrairCpfCnhDoTexto(texto);
-  } catch (err) {
-    console.warn("[OCR PDF] Falha no fallback local de leitura do PDF:", err?.message || err);
-    return { cpf: null, cnh: null };
-  }
-}
-
 // =========================
 // ROTA: Health Check
 // =========================
@@ -127,30 +115,16 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     // Detectar origem (upload ou camera)
     const origem = req.body?.origem || "upload";
 
-    // --- FLUXO 1: PDF (Via Google Cloud Storage) ---
+    // --- FLUXO 1: PDF (Google Vision via Google Cloud Storage) ---
     if (req.file.mimetype === "application/pdf") {
-      // Tentativa 1: leitura local do texto do PDF (dispensa bucket quando o PDF já é pesquisável)
-      const local = await extrairCpfCnhPdfBuffer(req.file.buffer);
-      if (local?.cpf || local?.cnh) {
-        if (local.cpf) {
-          registrarLead({
-            cpf: local.cpf,
-            cnh: local.cnh,
-            origem,
-            status: "DESCONHECIDO",
-          });
-        }
-        return res.json({ cpf: local.cpf || null, cnh: local.cnh || null, nome: null });
-      }
-
       const bucketName = getOcrBucketName();
       if (!bucketName) {
-        return res.status(422).json({
-          error: "Não foi possível extrair os dados deste PDF automaticamente. Envie foto da CNH (JPG/PNG) ou digite CPF/CNH manualmente.",
+        return res.status(500).json({
+          error: "Configuração de Bucket ausente no servidor. Defina OCR_BUCKET (ou GCS_BUCKET).",
         });
       }
       if (!storage || !visionClient) {
-        return res.status(422).json({ error: "Processamento avançado de PDF indisponível no momento. Envie foto da CNH (JPG/PNG) ou digite manualmente." });
+        return res.status(500).json({ error: "Google Cloud não configurado." });
       }
 
       const jobId = newJobId();
