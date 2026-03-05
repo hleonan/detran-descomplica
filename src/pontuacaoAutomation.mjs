@@ -554,51 +554,37 @@ class PontuacaoAutomation {
         return limpo;
       };
 
-      const r = {
-        auto: 'N[º°o]\\s*Auto',
-        data: 'Data',
-        orgao: 'Org[aã]o',
-        placa: 'Placa',
-        proprietario: 'Propriet[aá]rio',
-        responsavel: 'Resp\\.?\\s*Pontos',
-        situacao: 'Situa[cç][aã]o',
-        local: 'Local',
-        infracao: 'Infra[cç][aã]o',
-        enquadramento: 'Enquadramento',
-        vencimento: 'Vencimento',
-        pontos: 'Pontos',
-        processo: 'Processo',
-        valorComDesconto: 'Valor\\s+com\\s+desconto',
-        valor: 'Valor(?!\\s+com\\s+desconto)'
+      const canon = (valor = '') =>
+        normalizar(valor)
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[.:]/g, '')
+          .replace(/\s+/g, ' ')
+          .toUpperCase()
+          .trim();
+
+      const pick = (campos, regexList, fallback = '-') => {
+        for (const [chave, valor] of campos.entries()) {
+          for (const reg of regexList) {
+            if (reg.test(chave)) {
+              return safe(valor);
+            }
+          }
+        }
+        return fallback;
       };
 
-      const todosRotulos = Object.values(r);
-      const extrair = (texto, rotulo) => {
-        const proximos = todosRotulos.filter((item) => item !== rotulo).join('|');
-        const regex = new RegExp(`${rotulo}\\s*:\\s*([\\s\\S]*?)(?=\\s*(?:${proximos})\\s*:|$)`, 'i');
-        const match = String(texto || '').match(regex);
-        return safe(match?.[1] || '');
-      };
-
-      const extrairPontos = (texto, responsavelPontos) => {
-        const candidatosNumericos = Array.from(
-          String(texto || '').matchAll(/(?:^|\s)Pontos\s*:\s*([0-9]{1,3}|\*)\b/gi)
-        )
+      const extrairPontosNumerico = (texto = '', enquadramento = '', responsavelPontos = '') => {
+        const textoTotal = `${texto} ${enquadramento}`;
+        const matches = Array.from(String(textoTotal).matchAll(/PONTOS?\s*:\s*([0-9]{1,3}|\*)/gi))
           .map((m) => safe(m?.[1] || ''))
           .filter((v) => v && v !== '-');
+        if (matches.length) return matches[matches.length - 1];
 
-        if (candidatosNumericos.length) {
-          return candidatosNumericos[candidatosNumericos.length - 1];
-        }
-
-        const bruto = String(texto || '').match(/(?:^|\s)Pontos\s*:\s*([^\n\r]+)/i)?.[1] || '';
+        const bruto = String(texto || '').match(/(?:^|\s)PONTOS?\s*:\s*([^\n\r]+)/i)?.[1] || '';
         const valorBruto = safe(bruto);
         const resp = safe(responsavelPontos);
-
-        if (resp !== '-' && valorBruto.toUpperCase() === resp.toUpperCase()) {
-          return '-';
-        }
-
+        if (resp !== '-' && valorBruto.toUpperCase() === resp.toUpperCase()) return '-';
         return valorBruto || '-';
       };
 
@@ -606,34 +592,87 @@ class PontuacaoAutomation {
       if (!paineis.length) return [];
 
       return paineis.map((panel) => {
-        const texto = normalizar(panel.innerText || panel.textContent || '');
+        const textoOriginal = normalizar(panel.innerText || panel.textContent || '');
+        const texto = textoOriginal.toUpperCase();
+        const campos = new Map();
+
+        const grupos = Array.from(panel.querySelectorAll('.col-sm-3, .col-sm-4, .col-sm-6, .col-xs-12'));
+        for (const grupo of grupos) {
+          const labelEl = grupo.querySelector('label');
+          if (!labelEl) continue;
+
+          const chave = canon(labelEl.textContent || '');
+          if (!chave) continue;
+
+          const spans = Array.from(grupo.querySelectorAll('span'))
+            .map((span) => normalizar(span.textContent || ''))
+            .filter(Boolean);
+
+          let valor = safe(spans.join(' '));
+          if (valor === '-') {
+            const bruto = normalizar((grupo.textContent || '').replace(labelEl.textContent || '', ''));
+            valor = safe(bruto);
+          }
+
+          const atual = campos.get(chave);
+          if (!atual || atual === '-' || (valor !== '-' && valor.length > atual.length)) {
+            campos.set(chave, valor);
+          }
+        }
 
         const autoSpan = safe(panel.querySelector('.panel-heading .panel-title span')?.textContent || '');
-        const numeroAuto = autoSpan !== '-' ? autoSpan : extrair(texto, r.auto);
+        if (autoSpan !== '-') campos.set('N AUTO', autoSpan);
 
-        const data = extrair(texto, r.data);
-        const orgao = extrair(texto, r.orgao);
-        const placa = extrair(texto, r.placa);
-        const proprietario = extrair(texto, r.proprietario);
-        const responsavelPontos = extrair(texto, r.responsavel);
-        const situacao = extrair(texto, r.situacao);
-        const local = extrair(texto, r.local);
-        const infracao = extrair(texto, r.infracao);
-        const enquadramento = extrair(texto, r.enquadramento);
-        const vencimento = extrair(texto, r.vencimento);
-        const pontos = extrairPontos(texto, responsavelPontos);
-        const processo = extrair(texto, r.processo);
-        const valor = extrair(texto, r.valor);
-        const valorComDesconto = extrair(texto, r.valorComDesconto);
+        const numeroAuto = pick(campos, [/^N[Oº]?\s*AUTO$/, /^AUTO$/i]);
+        const data = pick(campos, [/^DATA$/]);
+        const orgao = pick(campos, [/^ORGAO$/]);
+        const placa = pick(campos, [/^PLACA$/]);
+        const proprietario = pick(campos, [/^PROPRIETARIO$/]);
+        const responsavelPontos = pick(campos, [/^RESP\s*PONTOS$/]);
+        const situacaoBruta = pick(campos, [/^SITUACAO$/]);
+        const local = pick(campos, [/^LOCAL$/]);
+        const infracao = pick(campos, [/^INFRACAO$/]);
+        const enquadramentoComPontos = pick(campos, [/^ENQUADRAMENTO$/]);
+        const vencimento = pick(campos, [/^VENCIMENTO$/]);
+        const processo = pick(campos, [/^PROCESSO$/]);
+        const valor = pick(campos, [/^VALOR$/]);
+        const valorComDesconto = pick(campos, [/^VALOR\s+COM\s+DESCONTO$/]);
+
+        const dataPagamentoMatch = String(situacaoBruta || '').match(/PAGA?\s*EM\s*:?\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i);
+        const dataPagamento = dataPagamentoMatch ? dataPagamentoMatch[1] : '-';
+        const pagamentoStatus = /PAGA?\s*EM/i.test(situacaoBruta)
+          ? 'PAGA'
+          : /NAO\s*PAGA|N[AÃ]O\s*PAGA/i.test(situacaoBruta)
+          ? 'NAO PAGA'
+          : '-';
+        const informacaoPagamento = pagamentoStatus === '-'
+          ? '-'
+          : `${pagamentoStatus}${dataPagamento !== '-' ? ` em ${dataPagamento}` : ''}`;
+
+        const statusAtualLimpo = safe(
+          String(situacaoBruta || '')
+            .replace(/[-–—]?\s*PAGA?\s*EM\s*:?\s*[0-9]{2}\/[0-9]{2}\/[0-9]{4}/ig, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim()
+        );
+        const statusAtual = statusAtualLimpo === '-' ? safe(situacaoBruta) : statusAtualLimpo;
+
+        const pontos = extrairPontosNumerico(texto, enquadramentoComPontos, responsavelPontos);
+        const enquadramento = safe(
+          String(enquadramentoComPontos || '')
+            .replace(/PONTOS?\s*:\s*(?:[0-9]{1,3}|\*)/ig, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim()
+        );
 
         let status = 'Pendente';
-        if (/paga|quitad|liquid/i.test(situacao)) status = 'Pago';
-        if (/cancelad/i.test(situacao)) status = 'Cancelada';
-        if (/suspens/i.test(situacao)) status = 'Suspensa';
+        if (/paga|quitad|liquid/i.test(situacaoBruta)) status = 'Pago';
+        if (/cancelad/i.test(situacaoBruta)) status = 'Cancelada';
+        if (/suspens/i.test(situacaoBruta)) status = 'Suspensa';
 
         return {
           data,
-          descricao: infracao !== '-' ? infracao : texto.slice(0, 200),
+          descricao: infracao !== '-' ? infracao : textoOriginal.slice(0, 200),
           pontos,
           valor,
           valorComDesconto,
@@ -643,12 +682,16 @@ class PontuacaoAutomation {
           placa,
           proprietario,
           responsavelPontos,
-          situacao,
+          situacao: situacaoBruta,
+          statusAtual,
           local,
           infracao,
           enquadramento,
           vencimento,
-          processo
+          processo,
+          dataPagamento,
+          pagamentoStatus,
+          informacaoPagamento
         };
       });
     });

@@ -683,6 +683,7 @@
         }
         .detalhe-label { font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
         .detalhe-value { font-size: 15px; color: #003D7A; font-weight: 700; line-height: 1.4; }
+        .detalhe-pontos { color: #d32f2f; }
 
         .multas-empty { text-align: center; padding: 60px 20px; }
         .multas-empty-icon { font-size: 80px; margin-bottom: 20px; }
@@ -2022,6 +2023,10 @@
           data.multas.forEach((m) => {
             const status = campo(m.status || "Pendente");
             const infracaoDetalhe = campo(m.infracao !== "-" ? m.infracao : m.descricao);
+            const statusAtual = campo(m.statusAtual || m.situacao);
+            const infoPagamento = campo(m.informacaoPagamento);
+            const pontosValor = campo(m.pontos);
+            const classePontos = pontosValor !== "-" ? "detalhe-value detalhe-pontos" : "detalhe-value";
 
             html += `
               <div class="multa-card">
@@ -2037,15 +2042,16 @@
                   <div class="multa-head-item"><span class="multa-head-label">Resp. Pontos:</span> ${escapeHtml(campo(m.responsavelPontos))}</div>
                 </div>
                 <div class="multa-detalhes">
-                  <div class="multa-detalhe"><span class="detalhe-label">Situação</span><span class="detalhe-value">${escapeHtml(campo(m.situacao))}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Status Atual</span><span class="detalhe-value">${escapeHtml(statusAtual)}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Infração</span><span class="detalhe-value">${escapeHtml(infracaoDetalhe)}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Local</span><span class="detalhe-value">${escapeHtml(campo(m.local))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Enquadramento</span><span class="detalhe-value">${escapeHtml(campo(m.enquadramento))}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Pontos</span><span class="detalhe-value">${escapeHtml(campo(m.pontos))}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Pontos</span><span class="${classePontos}">${escapeHtml(pontosValor)}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Vencimento</span><span class="detalhe-value">${escapeHtml(campo(m.vencimento))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Processo</span><span class="detalhe-value">${escapeHtml(campo(m.processo))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Valor</span><span class="detalhe-value">${escapeHtml(campo(m.valor))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Valor com Desconto</span><span class="detalhe-value">${escapeHtml(campo(m.valorComDesconto))}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Informação de Pagamento</span><span class="detalhe-value">${escapeHtml(infoPagamento)}</span></div>
                 </div>
               </div>`;
           });
