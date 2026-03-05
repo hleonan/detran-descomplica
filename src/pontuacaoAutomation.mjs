@@ -12,7 +12,7 @@ class PontuacaoAutomation {
     this.browser = null;
     this.cpf = '';
     this.cnh = '';
-    this.consultaUrl = 'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao';
+    this.consultaUrl = 'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao';
   }
 
   async consultarPontuacao(cpf, cnh, uf = 'RJ') {
@@ -76,9 +76,15 @@ class PontuacaoAutomation {
         const captchaToken = await this.resolverCaptcha(page);
         if (!captchaToken) throw new Error('Falha ao resolver CAPTCHA (token não retornado pelo serviço).');
 
+        const botaoConsultar = page
+          .locator('button[type="submit"], input[type="submit"], button:has-text("Consultar"), input[value*="Consultar" i]')
+          .first();
+
+        await botaoConsultar.waitFor({ state: 'visible', timeout: 10000 });
+
         await Promise.all([
           page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
-          page.click('button[type="submit"]')
+          botaoConsultar.click()
         ]);
 
         const resultado = await this.capturarResultado(page);
@@ -103,8 +109,8 @@ class PontuacaoAutomation {
 
   async abrirPaginaConsulta(page) {
     const tentativasDiretas = [
-      'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
-      'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
+      'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
+      'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
     ];
     const errosDiretos = [];
 
@@ -122,8 +128,8 @@ class PontuacaoAutomation {
 
     const confirmarPortalOffline = async () => {
       const urls = [
-        'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
-        'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
+        'http://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao',
+        'https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao'
       ];
 
       for (const url of urls) {
@@ -199,21 +205,23 @@ class PontuacaoAutomation {
       }
 
       const msg = mensagemErro(err);
-      if (ehInterrupcaoNavegacao(msg)) {
-        try {
-          await page.goto('https://multas.detran.rj.gov.br/gaideweb2/consultaPontuacao', {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000
-          });
-          await page.waitForSelector('input[name="cpf"]', { timeout: 10000 });
-          this.consultaUrl = page.url();
-          return;
-        } catch (err2) {
-          const msg2 = mensagemErro(err2);
-          errosDiretos.push(msg2);
-          if (await estaNaTelaConsulta()) {
+        if (ehInterrupcaoNavegacao(msg)) {
+        for (const url of tentativasDiretas) {
+          try {
+            await page.goto(url, {
+              waitUntil: 'domcontentloaded',
+              timeout: 30000
+            });
+            await page.waitForSelector('input[name="cpf"]', { timeout: 10000 });
             this.consultaUrl = page.url();
             return;
+          } catch (err2) {
+            const msg2 = mensagemErro(err2);
+            errosDiretos.push(msg2);
+            if (await estaNaTelaConsulta()) {
+              this.consultaUrl = page.url();
+              return;
+            }
           }
         }
       }

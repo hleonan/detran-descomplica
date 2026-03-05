@@ -393,6 +393,16 @@ router.post("/consultar-multas", async (req, res) => {
     const cnhDigits = onlyDigits(cnh);
     const apiKey = process.env.TWOCAPTCHA_API_KEY;
 
+    if (!cpfDigits || !cnhDigits) {
+      return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
+    }
+    if (cpfDigits.length !== 11) {
+      return res.status(400).json({ ok: false, error: "CPF inválido." });
+    }
+    if (cnhDigits.length < 9 || cnhDigits.length > 11) {
+      return res.status(400).json({ ok: false, error: "CNH inválida." });
+    }
+
     if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
 
     const automation = new PontuacaoAutomation(apiKey);

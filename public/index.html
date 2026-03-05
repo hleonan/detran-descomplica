@@ -1725,13 +1725,8 @@
             btnAction.innerText = "CLIQUE PARA CONTINUAR";
             btnAction.style.background = "linear-gradient(135deg, #B71C1C 0%, #D32F2F 100%)";
             btnAction.onclick = () => goToScreen4();
-
-            btnSecondary.style.display = "block";
-            btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
-            btnSecondary.style.background = "#6c757d";
-            btnSecondary.onclick = () => {
-                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
-            };
+            btnSecondary.style.display = "none";
+            btnSecondary.onclick = null;
 
           // ── CENÁRIO 3: MULTAS + SUSPENSÃO ──
           } else if (data.status === "SUSPENSAO" || data.temSuspensao) {
@@ -1762,13 +1757,8 @@
             btnAction.innerText = "CLIQUE PARA CONTINUAR";
             btnAction.style.background = "linear-gradient(135deg, #E65100 0%, #FF6D00 100%)";
             btnAction.onclick = () => goToScreen4();
-
-            btnSecondary.style.display = "block";
-            btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
-            btnSecondary.style.background = "#6c757d";
-            btnSecondary.onclick = () => {
-                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
-            };
+            btnSecondary.style.display = "none";
+            btnSecondary.onclick = null;
 
           // ── CENÁRIO 2: SÓ MULTAS ──
           } else if (data.status === "MULTAS" || data.temMultas) {
@@ -1799,13 +1789,8 @@
             btnAction.innerText = "CLIQUE PARA CONTINUAR";
             btnAction.style.background = "linear-gradient(135deg, #FF6F00 0%, #FFA000 100%)";
             btnAction.onclick = () => goToScreen4();
-
-            btnSecondary.style.display = "block";
-            btnSecondary.innerText = "BAIXAR CERTIDÃO COMPLETA";
-            btnSecondary.style.background = "#6c757d";
-            btnSecondary.onclick = () => {
-                abrirCertidaoCompleta(data.caseId, data.pdfBase64 || window.__lastCertidaoBase64);
-            };
+            btnSecondary.style.display = "none";
+            btnSecondary.onclick = null;
 
           // ── CENÁRIO 5: NADA CONSTA ──
           } else {
@@ -1954,6 +1939,10 @@
           return "Portal de multas do DETRAN-RJ indisponível para consulta automática neste momento. Tente novamente em alguns minutos.";
         }
 
+        if (/upstream|is not valid json|unexpected token|bad gateway|gateway|502|503|504/i.test(msg)) {
+          return "Falha temporária no servidor ao consultar multas. Tente novamente em alguns minutos.";
+        }
+
         if (/page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(msg)) {
           return "Falha temporária ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos.";
         }
@@ -1965,6 +1954,15 @@
       async function consultarMultas() {
         const cpf = document.getElementById("cpf")?.value?.replace(/\D/g, "");
         const cnh = document.getElementById("cnh")?.value?.replace(/\D/g, "");
+        const subtitleEl = document.getElementById("multas-subtitle");
+        const loadingEl = document.getElementById("multas-loading");
+        const resumoEl = document.getElementById("multas-resumo");
+        const listaEl = document.getElementById("multas-lista");
+
+        if (subtitleEl) subtitleEl.innerText = "Consultando multas...";
+        if (loadingEl) loadingEl.style.display = "block";
+        if (resumoEl) resumoEl.style.display = "none";
+        if (listaEl) listaEl.innerHTML = "";
        
         if (!cpf || !cnh) {
           document.getElementById("multas-subtitle").innerText = "Dados não disponíveis. Volte e faça a consulta primeiro.";
@@ -1978,8 +1976,13 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cpf, cnh })
           });
-
-          const data = await resp.json();
+          const bodyText = await resp.text();
+          let data;
+          try {
+            data = bodyText ? JSON.parse(bodyText) : {};
+          } catch (e) {
+            data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+          }
           document.getElementById("multas-loading").style.display = "none";
 
           if (!data.ok) {
