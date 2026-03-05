@@ -75,6 +75,42 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function extrairCpfCnhDoTexto(texto = "") {
+  const textoSeguro = String(texto || "");
+
+  const cpfMatch = textoSeguro.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/);
+  const cpf = cpfMatch ? cpfMatch[0].replace(/\D/g, "") : null;
+
+  let cnh = null;
+
+  const cnhComRotulo =
+    textoSeguro.match(/CNH[^0-9]{0,20}(\d{9,11})/i) ||
+    textoSeguro.match(/REGISTRO[^0-9]{0,20}(\d{9,11})/i);
+  if (cnhComRotulo?.[1]) cnh = onlyDigits(cnhComRotulo[1]).slice(0, 11);
+
+  if (!cnh) {
+    const candidatos11 = Array.from(textoSeguro.matchAll(/(?<!\d)\d{11}(?!\d)/g)).map((m) => m[0]);
+    if (candidatos11.length) {
+      cnh = candidatos11.find((num) => num !== cpf) || candidatos11[0];
+    }
+  }
+
+  return { cpf, cnh: cnh || null };
+}
+
+async function extrairCpfCnhPdfBuffer(buffer) {
+  try {
+    const pdfParseModule = await import("pdf-parse");
+    const pdfParse = pdfParseModule?.default || pdfParseModule;
+    const parsed = await pdfParse(buffer);
+    const texto = parsed?.text || "";
+    return extrairCpfCnhDoTexto(texto);
+  } catch (err) {
+    console.warn("[OCR PDF] Falha no fallback local de leitura do PDF:", err?.message || err);
+    return { cpf: null, cnh: null };
+  }
+}
+
 // =========================
 // ROTA: Health Check
 // =========================
@@ -93,14 +129,28 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
 
     // --- FLUXO 1: PDF (Via Google Cloud Storage) ---
     if (req.file.mimetype === "application/pdf") {
+      // Tentativa 1: leitura local do texto do PDF (dispensa bucket quando o PDF já é pesquisável)
+      const local = await extrairCpfCnhPdfBuffer(req.file.buffer);
+      if (local?.cpf || local?.cnh) {
+        if (local.cpf) {
+          registrarLead({
+            cpf: local.cpf,
+            cnh: local.cnh,
+            origem,
+            status: "DESCONHECIDO",
+          });
+        }
+        return res.json({ cpf: local.cpf || null, cnh: local.cnh || null, nome: null });
+      }
+
       const bucketName = getOcrBucketName();
       if (!bucketName) {
-        return res.status(500).json({
-          error: "Configuração de Bucket ausente no servidor. Defina OCR_BUCKET (ou GCS_BUCKET).",
+        return res.status(422).json({
+          error: "Não foi possível extrair os dados deste PDF automaticamente. Envie foto da CNH (JPG/PNG) ou digite CPF/CNH manualmente.",
         });
       }
       if (!storage || !visionClient) {
-        return res.status(500).json({ error: "Google Cloud não configurado." });
+        return res.status(422).json({ error: "Processamento avançado de PDF indisponível no momento. Envie foto da CNH (JPG/PNG) ou digite manualmente." });
       }
 
       const jobId = newJobId();
@@ -202,11 +252,7 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     const parsed = JSON.parse(buf.toString("utf8"));
     const text = parsed?.responses?.[0]?.fullTextAnnotation?.text || "";
 
-    const cpfMatch = text.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
-    const cnhMatch = text.match(/(?<!\d)\d{11}(?!\d)/);
-
-    const cpf = cpfMatch ? cpfMatch[0].replace(/\D/g, "") : null;
-    const cnh = cnhMatch ? cnhMatch[0] : null;
+    const { cpf, cnh } = extrairCpfCnhDoTexto(text);
 
     job.status = "done";
     job.result = { cpf, cnh };
