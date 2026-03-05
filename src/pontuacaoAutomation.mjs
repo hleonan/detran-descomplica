@@ -425,31 +425,89 @@ class PontuacaoAutomation {
   }
 
   async abrirDetalhesTodasInfracoes(page) {
-    // Tenta clicar no ícone de lupa da linha "Todas as Infrações (últimos 5 anos)".
-    const lupa = page.locator('tr', { hasText: 'Todas as Infrações (últimos 5 anos)' }).locator('a, img').first();
+    const estaNaPagina5Anos = async () => {
+      try {
+        return await page.evaluate(() => {
+          const texto = (document.body?.innerText || '').replace(/\s+/g, ' ').toUpperCase();
+          return texto.includes('CONSULTA TODAS AS INFRAÇÕES (ÚLTIMOS 5 ANOS)') || /\/busca\/5anos/i.test(location.href);
+        });
+      } catch {
+        return /\/busca\/5anos/i.test(page.url() || '');
+      }
+    };
 
-    if (await lupa.count()) {
-      const currentUrl = page.url();
+    if (await estaNaPagina5Anos()) return;
+
+    const esperarPagina5Anos = async (timeoutMs = 12000) => {
+      try {
+        await page.waitForFunction(() => {
+          const texto = (document.body?.innerText || '').replace(/\s+/g, ' ').toUpperCase();
+          return texto.includes('CONSULTA TODAS AS INFRAÇÕES (ÚLTIMOS 5 ANOS)') || /\/busca\/5anos/i.test(location.href);
+        }, { timeout: timeoutMs });
+        return true;
+      } catch {
+        return await estaNaPagina5Anos();
+      }
+    };
+
+    // 1) Tenta pelo link direto para busca/5anos.
+    const linkBusca5Anos = page.locator('a[href*="busca/5anos"]').first();
+    if (await linkBusca5Anos.count()) {
       try {
         await Promise.all([
-          page.waitForLoadState('domcontentloaded', { timeout: 15000 }),
-          lupa.click({ timeout: 5000 })
+          page.waitForURL(/\/busca\/5anos/i, { timeout: 12000 }),
+          linkBusca5Anos.click({ timeout: 5000 })
         ]);
       } catch {
-        // fallback: clique sem wait explícito
-        try { await lupa.click({ timeout: 3000 }); } catch (e) {}
+        try { await linkBusca5Anos.click({ timeout: 3000 }); } catch (e) {}
       }
 
-      await page.waitForTimeout(1200);
-      if (page.url() === currentUrl) {
-        // Algumas páginas abrem detalhe em popup/mesma tela sem alterar URL;
-        // segue para extração mesmo assim.
-      }
+      if (await esperarPagina5Anos()) return;
     }
+
+    // 2) Tenta pela linha do resumo "Todas as Infrações (últimos 5 anos)" + lupa.
+    const lupaResumo = page
+      .locator('tr', { hasText: /Todas as Infra[cç][oõ]es\s*\(.*5 anos\)/i })
+      .locator('a, img')
+      .first();
+
+    if (await lupaResumo.count()) {
+      try {
+        await Promise.all([
+          page.waitForLoadState('domcontentloaded', { timeout: 12000 }),
+          lupaResumo.click({ timeout: 5000 })
+        ]);
+      } catch {
+        try { await lupaResumo.click({ timeout: 3000 }); } catch (e) {}
+      }
+
+      if (await esperarPagina5Anos()) return;
+    }
+
+    // 3) Fallback final: navega direto no endpoint, preservando host/sessão atual.
+    try {
+      const urlAtual = new URL(page.url());
+      const urlBusca5Anos = `${urlAtual.protocol}//${urlAtual.host}/gaideweb2/consultaPontuacao/busca/5anos`;
+      await page.goto(urlBusca5Anos, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      if (await esperarPagina5Anos(8000)) return;
+    } catch (e) {}
   }
 
   async extrairMultasDetalhadas(page) {
     await page.waitForTimeout(800);
+
+    // Se por instabilidade ainda estiver no resumo, força mais uma tentativa.
+    const aindaNoResumo = await page.evaluate(() => {
+      const texto = (document.body?.innerText || '').replace(/\s+/g, ' ').toUpperCase();
+      return (
+        texto.includes('CONSULTA TODAS AS INFRAÇÕES') &&
+        !texto.includes('CONSULTA TODAS AS INFRAÇÕES (ÚLTIMOS 5 ANOS)')
+      );
+    }).catch(() => false);
+    if (aindaNoResumo) {
+      await this.abrirDetalhesTodasInfracoes(page);
+      await page.waitForTimeout(500);
+    }
 
     // No DETRAN, o link clicavel costuma ser o codigo do auto (ex.: X41526005),
     // nao o texto literal "Nº Auto". Portanto, marcamos e clicamos esses links.
@@ -571,7 +629,8 @@ class PontuacaoAutomation {
               processo: '-'
             };
           })
-          .filter(Boolean);
+          .filter(Boolean)
+          .filter((item) => !/infra[cç][oõ]es\s+pontu[aá]veis|infra[cç][oõ]es\s+mandat[oó]rias|todas\s+as\s+infra[cç][oõ]es/i.test(`${item.data} ${item.descricao}`));
       }
 
       return dados;
