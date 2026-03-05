@@ -104,7 +104,7 @@ function isErroMultasRetryable(mensagem = "") {
   const normalizada = String(mensagem || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  return /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::|captcha|token nao retornado/i.test(normalizada);
+  return /DETRAN_MULTAS_OFFLINE|DETRAN_MULTAS_DETALHE_NAO_ABERTO|DETRAN_MULTAS_DETALHE_VAZIO|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::|captcha|token nao retornado/i.test(normalizada);
 }
 
 async function executarConsultaMultasComRetry(cpfDigits, cnhDigits, apiKey) {
@@ -524,6 +524,7 @@ router.post("/consultar-multas", async (req, res) => {
     }
 
     const resultado = await consultarMultasComCache(cpfDigits, cnhDigits, apiKey);
+    console.log(`[MULTAS] Consulta concluida para ${cpfDigits}. Quantidade extraida: ${resultado?.multas?.length || 0}. Cache=${resultado.fromCache ? "hit" : "miss"}`);
 
     return res.json({
       ok: true,
@@ -541,6 +542,8 @@ router.post("/consultar-multas", async (req, res) => {
     const indisponivel = isErroMultasRetryable(mensagem);
     const mensagemPublica = /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED/i.test(mensagem)
       ? "Falha ao acessar o portal de multas do DETRAN-RJ a partir do servidor. Tente novamente em alguns minutos."
+      : /DETRAN_MULTAS_DETALHE_NAO_ABERTO|DETRAN_MULTAS_DETALHE_VAZIO/i.test(mensagem)
+      ? "Não foi possível abrir o detalhamento das infrações no portal do DETRAN-RJ. Tente novamente em instantes."
       : /page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(mensagem)
       ? "Falha temporaria ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos."
       : /captcha|token nao retornado/i.test(mensagemNormalizada)

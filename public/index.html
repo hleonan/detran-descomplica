@@ -1419,6 +1419,46 @@
         return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
       }
 
+      const IDENTIDADE_CONSULTA_KEY = "__ultimaConsultaIdentidade";
+
+      function salvarIdentidadeConsulta(cpf, cnh) {
+        const payload = {
+          cpf: onlyDigits(cpf),
+          cnh: sanitizeCNH(cnh),
+          createdAt: Date.now(),
+        };
+
+        if (!payload.cpf || !payload.cnh) return;
+
+        window.__lastConsultaCpf = payload.cpf;
+        window.__lastConsultaCnh = payload.cnh;
+        window.__lastConsultaCreatedAt = payload.createdAt;
+
+        try {
+          localStorage.setItem(IDENTIDADE_CONSULTA_KEY, JSON.stringify(payload));
+        } catch (err) {}
+      }
+
+      function recuperarIdentidadeConsulta() {
+        if (window.__lastConsultaCpf && window.__lastConsultaCnh) {
+          return { cpf: window.__lastConsultaCpf, cnh: window.__lastConsultaCnh };
+        }
+
+        try {
+          const raw = localStorage.getItem(IDENTIDADE_CONSULTA_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed?.cpf || !parsed?.cnh) return null;
+
+          window.__lastConsultaCpf = onlyDigits(parsed.cpf);
+          window.__lastConsultaCnh = sanitizeCNH(parsed.cnh);
+          window.__lastConsultaCreatedAt = parsed.createdAt || Date.now();
+          return { cpf: window.__lastConsultaCpf, cnh: window.__lastConsultaCnh };
+        } catch (err) {
+          return null;
+        }
+      }
+
      // ==========================================
       // LÓGICA PRINCIPAL: ANÁLISE (CONSULTAR CERTIDÃO)
       // ==========================================
@@ -1656,6 +1696,7 @@
 
           // Salva certidão para uso posterior (cache local por 1h)
           salvarCertidaoCache(data.caseId, data.pdfBase64 || null);
+          salvarIdentidadeConsulta(cpfDigits, cnhDigits);
         
           // ── CENÁRIO 4: MULTAS + SUSPENSÃO + CASSAÇÃO ──
           if (data.status === "CASSACAO" || data.temCassacao) {
@@ -1924,8 +1965,9 @@
       }
 
       async function consultarMultas() {
-        const cpf = document.getElementById("cpf")?.value?.replace(/\D/g, "");
-        const cnh = document.getElementById("cnh")?.value?.replace(/\D/g, "");
+        const identidadeConsulta = recuperarIdentidadeConsulta();
+        const cpf = identidadeConsulta?.cpf || document.getElementById("cpf")?.value?.replace(/\D/g, "");
+        const cnh = identidadeConsulta?.cnh || document.getElementById("cnh")?.value?.replace(/\D/g, "");
         const subtitleEl = document.getElementById("multas-subtitle");
         const loadingEl = document.getElementById("multas-loading");
         const listaEl = document.getElementById("multas-lista");

@@ -364,10 +364,23 @@ class PontuacaoAutomation {
       }
 
       const resumo = await this.extrairResumoPontuacao(page);
+      const totalResumo = Number(String(resumo?.multasPendentes || '0').replace(/\D/g, '')) || 0;
 
-      await this.abrirDetalhesTodasInfracoes(page);
+      const abriuDetalhes = await this.abrirDetalhesTodasInfracoes(page);
+      if (!abriuDetalhes && totalResumo > 0) {
+        return {
+          sucesso: false,
+          erro: 'DETRAN_MULTAS_DETALHE_NAO_ABERTO: nao foi possivel abrir o detalhamento (lupa) para extrair as infracoes.'
+        };
+      }
 
       const multas = await this.extrairMultasDetalhadas(page);
+      if (totalResumo > 0 && (!Array.isArray(multas) || multas.length === 0)) {
+        return {
+          sucesso: false,
+          erro: 'DETRAN_MULTAS_DETALHE_VAZIO: o DETRAN indicou multas no resumo, mas o detalhamento veio vazio.'
+        };
+      }
 
       return {
         sucesso: true,
@@ -436,7 +449,7 @@ class PontuacaoAutomation {
       }
     };
 
-    if (await estaNaPagina5Anos()) return;
+    if (await estaNaPagina5Anos()) return true;
 
     const esperarPagina5Anos = async (timeoutMs = 12000) => {
       try {
@@ -462,7 +475,7 @@ class PontuacaoAutomation {
         try { await linkBusca5Anos.click({ timeout: 3000 }); } catch (e) {}
       }
 
-      if (await esperarPagina5Anos()) return;
+      if (await esperarPagina5Anos()) return true;
     }
 
     // 2) Tenta pela linha do resumo "Todas as Infrações (últimos 5 anos)" + lupa.
@@ -481,7 +494,7 @@ class PontuacaoAutomation {
         try { await lupaResumo.click({ timeout: 3000 }); } catch (e) {}
       }
 
-      if (await esperarPagina5Anos()) return;
+      if (await esperarPagina5Anos()) return true;
     }
 
     // 3) Fallback final: navega direto no endpoint, preservando host/sessão atual.
@@ -489,8 +502,10 @@ class PontuacaoAutomation {
       const urlAtual = new URL(page.url());
       const urlBusca5Anos = `${urlAtual.protocol}//${urlAtual.host}/gaideweb2/consultaPontuacao/busca/5anos`;
       await page.goto(urlBusca5Anos, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      if (await esperarPagina5Anos(8000)) return;
+      if (await esperarPagina5Anos(8000)) return true;
     } catch (e) {}
+
+    return false;
   }
 
   async extrairMultasDetalhadas(page) {
@@ -636,7 +651,18 @@ class PontuacaoAutomation {
       return dados;
     });
 
-    return multas;
+    const multasValidas = Array.isArray(multas)
+      ? multas.filter((m) => {
+          const numeroAuto = String(m?.numeroAuto || '').trim();
+          const situacao = String(m?.situacao || '').trim();
+          const infracao = String(m?.infracao || '').trim();
+          const temNumeroAuto = numeroAuto && numeroAuto !== '-';
+          const temDetalhe = (situacao && situacao !== '-') || (infracao && infracao !== '-');
+          return temNumeroAuto && temDetalhe;
+        })
+      : [];
+
+    return multasValidas;
   }
 
   async expandirDetalhesPorNumeroAuto(page) {
