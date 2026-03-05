@@ -1,0 +1,19 @@
+#!/bin/sh
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+
+if [ "$BRANCH" != "main" ]; then
+  exit 0
+fi
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "[post-commit] remoto 'origin' não encontrado; push automático ignorado." >&2
+  exit 0
+fi
+
+echo "[post-commit] enviando commit para origin/main..."
+if ! git push origin main; then
+  echo "[post-commit] falha no push automático (commit local já foi criado)." >&2
+fi
+
+exit 0

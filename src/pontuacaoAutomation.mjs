@@ -451,15 +451,9 @@ class PontuacaoAutomation {
   async extrairMultasDetalhadas(page) {
     await page.waitForTimeout(800);
 
-    // Se houver links "Nº Auto", clica em todos para expandir detalhamento.
-    const linksNumeroAuto = page.locator('a', { hasText: 'Nº Auto' });
-    const totalLinks = await linksNumeroAuto.count();
-    for (let i = 0; i < totalLinks; i += 1) {
-      try {
-        await linksNumeroAuto.nth(i).click({ timeout: 2000 });
-        await page.waitForTimeout(250);
-      } catch (e) {}
-    }
+    // No DETRAN, o link clicavel costuma ser o codigo do auto (ex.: X41526005),
+    // nao o texto literal "Nº Auto". Portanto, marcamos e clicamos esses links.
+    await this.expandirDetalhesPorNumeroAuto(page);
 
     const multas = await page.evaluate(() => {
       const texto = (document.body?.innerText || '').replace(/\u00A0/g, ' ');
@@ -584,6 +578,58 @@ class PontuacaoAutomation {
     });
 
     return multas;
+  }
+
+  async expandirDetalhesPorNumeroAuto(page) {
+    const totalMarcados = await page.evaluate(() => {
+      const normalizar = (valor = '') => String(valor || '').replace(/\s+/g, ' ').trim();
+      const ehCodigoAuto = (valor = '') => /^[A-Z]\d{6,}$/i.test(valor) || /^[A-Z0-9-]{7,}$/i.test(valor);
+
+      let idx = 0;
+      const links = Array.from(document.querySelectorAll('a'));
+      for (const link of links) {
+        link.removeAttribute('data-auto-link-detalhe');
+
+        const textoLink = normalizar(link.textContent || '');
+        if (!textoLink || !ehCodigoAuto(textoLink)) continue;
+
+        const contexto = normalizar(
+          (
+            link.closest('tr, div, td, li, p')?.textContent ||
+            link.parentElement?.textContent ||
+            ''
+          ).slice(0, 700)
+        );
+
+        if (!/N[º°o]\s*Auto\s*:/i.test(contexto)) continue;
+
+        idx += 1;
+        link.setAttribute('data-auto-link-detalhe', String(idx));
+      }
+
+      return idx;
+    });
+
+    if (!totalMarcados) return 0;
+
+    const linksAuto = page.locator('a[data-auto-link-detalhe]');
+    const totalLinks = await linksAuto.count();
+
+    for (let i = 0; i < totalLinks; i += 1) {
+      try {
+        await linksAuto.nth(i).click({ timeout: 4000 });
+      } catch (e) {}
+      await page.waitForTimeout(300);
+    }
+
+    try {
+      await page.waitForFunction(() => {
+        const texto = (document.body?.innerText || '').replace(/\u00A0/g, ' ');
+        return /Situa[cç][aã]o\s*:|Infra[cç][aã]o\s*:|Enquadramento\s*:/i.test(texto);
+      }, { timeout: 6000 });
+    } catch (e) {}
+
+    return totalLinks;
   }
 }
 
