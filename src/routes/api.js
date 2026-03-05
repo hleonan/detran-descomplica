@@ -50,6 +50,9 @@ try {
 const ocrJobStore = new Map();
 const OCR_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_OCR_BUCKET = "detran-descomplica-ocr";
+const multasCacheStore = new Map();
+const multasInFlight = new Map();
+const MULTAS_CACHE_TTL_MS = 30 * 60 * 1000;
 
 function cleanupOCRJobs() {
   const now = Date.now();
@@ -76,8 +79,106 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function multasCacheKey(cpf, cnh) {
+  return `${onlyDigits(cpf)}:${onlyDigits(cnh)}`;
+}
+
+function cleanupMultasCache() {
+  const now = Date.now();
+  for (const [key, item] of multasCacheStore.entries()) {
+    if (!item?.updatedAt || now - item.updatedAt > MULTAS_CACHE_TTL_MS) {
+      multasCacheStore.delete(key);
+    }
+  }
+}
+
+function getCachedMultas(cpf, cnh) {
+  cleanupMultasCache();
+  const key = multasCacheKey(cpf, cnh);
+  const item = multasCacheStore.get(key);
+  if (!item || item.status !== "done" || !item.data) return null;
+  return item.data;
+}
+
 function isErroMultasRetryable(mensagem = "") {
-  return /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::/i.test(String(mensagem || ""));
+  return /DETRAN_MULTAS_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::|captcha|token não retornado/i.test(String(mensagem || ""));
+}
+
+async function executarConsultaMultasComRetry(cpfDigits, cnhDigits, apiKey) {
+  let resultado = null;
+  let ultimoErro = null;
+  const maxTentativas = 2;
+
+  for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+    try {
+      const automation = new PontuacaoAutomation(apiKey);
+      resultado = await automation.consultarPontuacao(cpfDigits, cnhDigits, "RJ");
+      if (!resultado?.sucesso) throw new Error(resultado?.erro || "Falha ao consultar multas.");
+      break;
+    } catch (err) {
+      ultimoErro = err;
+      const mensagemErro = err?.message || String(err);
+      const retryable = isErroMultasRetryable(mensagemErro);
+
+      console.warn(`[MULTAS] Falha na consulta (tentativa ${tentativa}/${maxTentativas}): ${mensagemErro}`);
+
+      if (!retryable || tentativa === maxTentativas) {
+        throw err;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500 * tentativa));
+    }
+  }
+
+  if (!resultado?.sucesso) throw ultimoErro || new Error("Falha ao consultar multas.");
+  return {
+    multas: resultado.multas || [],
+    resumo: resultado.resumo || {},
+  };
+}
+
+async function consultarMultasComCache(cpfDigits, cnhDigits, apiKey) {
+  const key = multasCacheKey(cpfDigits, cnhDigits);
+  const cacheValido = getCachedMultas(cpfDigits, cnhDigits);
+  if (cacheValido) return { ...cacheValido, fromCache: true };
+
+  if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
+
+  if (multasInFlight.has(key)) {
+    return multasInFlight.get(key);
+  }
+
+  const now = Date.now();
+  multasCacheStore.set(key, {
+    status: "processing",
+    updatedAt: now,
+    error: null,
+  });
+
+  const promise = (async () => {
+    try {
+      const data = await executarConsultaMultasComRetry(cpfDigits, cnhDigits, apiKey);
+      multasCacheStore.set(key, {
+        status: "done",
+        updatedAt: Date.now(),
+        data,
+        error: null,
+      });
+      return { ...data, fromCache: false };
+    } catch (err) {
+      multasCacheStore.set(key, {
+        status: "error",
+        updatedAt: Date.now(),
+        error: err?.message || String(err),
+      });
+      throw err;
+    } finally {
+      multasInFlight.delete(key);
+    }
+  })();
+
+  multasInFlight.set(key, promise);
+  return promise;
 }
 
 function extrairCpfCnhDoTexto(texto = "") {
@@ -344,6 +445,18 @@ router.post("/consultar-certidao", async (req, res) => {
     const caseId = `c_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     certidaoStore.set(caseId, { pdfBuffer, createdAt: Date.now() });
 
+    // Prefetch assíncrono das multas para acelerar a tela 4->6.
+    // Só pré-consulta quando há ocorrência para evitar custo desnecessário de captcha.
+    if (analise.temProblemas && process.env.TWOCAPTCHA_API_KEY) {
+      consultarMultasComCache(cpfDigits, cnhDigits, process.env.TWOCAPTCHA_API_KEY)
+        .then(() => {
+          console.log(`[MULTAS] Prefetch concluído para ${cpfDigits}.`);
+        })
+        .catch((err) => {
+          console.warn(`[MULTAS] Prefetch falhou para ${cpfDigits}: ${err?.message || err}`);
+        });
+    }
+
     return res.json({
       ok: true,
       caseId,
@@ -407,39 +520,13 @@ router.post("/consultar-multas", async (req, res) => {
       return res.status(400).json({ ok: false, error: "CNH inválida." });
     }
 
-    if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
-
-    let resultado = null;
-    let ultimoErro = null;
-    const maxTentativas = 2;
-
-    for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
-      try {
-        const automation = new PontuacaoAutomation(apiKey);
-        resultado = await automation.consultarPontuacao(cpfDigits, cnhDigits, "RJ");
-        if (!resultado?.sucesso) throw new Error(resultado?.erro || "Falha ao consultar multas.");
-        break;
-      } catch (err) {
-        ultimoErro = err;
-        const mensagemErro = err?.message || String(err);
-        const retryable = isErroMultasRetryable(mensagemErro);
-
-        console.warn(`[MULTAS] Falha na consulta (tentativa ${tentativa}/${maxTentativas}): ${mensagemErro}`);
-
-        if (!retryable || tentativa === maxTentativas) {
-          throw err;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 1500 * tentativa));
-      }
-    }
-
-    if (!resultado?.sucesso) throw ultimoErro || new Error("Falha ao consultar multas.");
+    const resultado = await consultarMultasComCache(cpfDigits, cnhDigits, apiKey);
 
     return res.json({
       ok: true,
-      multas: resultado.multas || [],
-      resumo: resultado.resumo || {},
+      multas: resultado.multas,
+      resumo: resultado.resumo,
+      cache: resultado.fromCache ? "hit" : "miss",
     });
 
   } catch (err) {
@@ -450,6 +537,8 @@ router.post("/consultar-multas", async (req, res) => {
       ? "Falha ao acessar o portal de multas do DETRAN-RJ a partir do servidor. Tente novamente em alguns minutos."
       : /page\.goto|Call log:|navigating to|is interrupted by another navigation|Navigation to/i.test(mensagem)
       ? "Falha temporaria ao acessar o portal de multas do DETRAN-RJ. Tente novamente em alguns minutos."
+      : /captcha|token não retornado/i.test(mensagem)
+      ? "Falha temporária na validação automática do CAPTCHA. Tente novamente em alguns instantes."
       : mensagem;
     return res.status(indisponivel ? 503 : 400).json({
       ok: false,

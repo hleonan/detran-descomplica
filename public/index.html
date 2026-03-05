@@ -1904,6 +1904,10 @@
           return "Falha temporária na consulta automática de multas. Tente novamente em alguns minutos.";
         }
 
+        if (/captcha|token não retornado|nao retornado/i.test(msg)) {
+          return "Falha temporária na validação do CAPTCHA do DETRAN-RJ. Tente novamente em alguns instantes.";
+        }
+
         if (/upstream|is not valid json|unexpected token|bad gateway|gateway|502|503|504/i.test(msg)) {
           return "Falha temporária no servidor ao consultar multas. Tente novamente em alguns minutos.";
         }
