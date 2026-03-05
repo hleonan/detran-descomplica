@@ -366,15 +366,15 @@ class PontuacaoAutomation {
       const resumo = await this.extrairResumoPontuacao(page);
       const totalResumo = Number(String(resumo?.multasPendentes || '0').replace(/\D/g, '')) || 0;
 
-      const abriuDetalhes = await this.abrirDetalhesTodasInfracoes(page);
-      if (!abriuDetalhes && totalResumo > 0) {
+      const paginaDetalhes = await this.abrirDetalhesTodasInfracoes(page);
+      if (!paginaDetalhes && totalResumo > 0) {
         return {
           sucesso: false,
           erro: 'DETRAN_MULTAS_DETALHE_NAO_ABERTO: nao foi possivel abrir o detalhamento (lupa) para extrair as infracoes.'
         };
       }
 
-      const multas = await this.extrairMultasDetalhadas(page);
+      const multas = await this.extrairMultasDetalhadas(paginaDetalhes || page);
       if (totalResumo > 0 && (!Array.isArray(multas) || multas.length === 0)) {
         return {
           sucesso: false,
@@ -413,6 +413,7 @@ class PontuacaoAutomation {
 
       const linhas = Array.from(document.querySelectorAll('tr'));
       let quantidadeAutosUltimos5Anos = 0;
+      let quantidadeTodasInfracoes5Anos = 0;
       let pontosUltimos5Anos = 0;
 
       for (const tr of linhas) {
@@ -424,12 +425,15 @@ class PontuacaoAutomation {
           quantidadeAutosUltimos5Anos = Number(numero(tds[1]));
           pontosUltimos5Anos = Number(numero(tds[2]));
         }
+        if (titulo.includes('todas as infrações') && titulo.includes('últimos 5 anos')) {
+          quantidadeTodasInfracoes5Anos = Number(numero(tds[1]));
+        }
       }
 
       resumo.pontosTotais = String(pontosUltimos5Anos || 0);
-      resumo.multasPendentes = String(quantidadeAutosUltimos5Anos || 0);
+      resumo.multasPendentes = String(Math.max(quantidadeAutosUltimos5Anos || 0, quantidadeTodasInfracoes5Anos || 0));
 
-      if (pontosUltimos5Anos > 0 || quantidadeAutosUltimos5Anos > 0) {
+      if (pontosUltimos5Anos > 0 || quantidadeAutosUltimos5Anos > 0 || quantidadeTodasInfracoes5Anos > 0) {
         resumo.situacao = 'Com infrações';
       }
 
@@ -438,74 +442,81 @@ class PontuacaoAutomation {
   }
 
   async abrirDetalhesTodasInfracoes(page) {
-    const estaNaPagina5Anos = async () => {
+    const context = page.context();
+
+    const ehPagina5Anos = async (pagina) => {
       try {
-        return await page.evaluate(() => {
+        return await pagina.evaluate(() => {
           const texto = (document.body?.innerText || '').replace(/\s+/g, ' ').toUpperCase();
           return texto.includes('CONSULTA TODAS AS INFRAÇÕES (ÚLTIMOS 5 ANOS)') || /\/busca\/5anos/i.test(location.href);
         });
       } catch {
-        return /\/busca\/5anos/i.test(page.url() || '');
+        return /\/busca\/5anos/i.test(pagina?.url?.() || '');
       }
     };
 
-    if (await estaNaPagina5Anos()) return true;
-
-    const esperarPagina5Anos = async (timeoutMs = 12000) => {
+    const esperar5Anos = async (pagina, timeoutMs = 12000) => {
       try {
-        await page.waitForFunction(() => {
+        await pagina.waitForFunction(() => {
           const texto = (document.body?.innerText || '').replace(/\s+/g, ' ').toUpperCase();
           return texto.includes('CONSULTA TODAS AS INFRAÇÕES (ÚLTIMOS 5 ANOS)') || /\/busca\/5anos/i.test(location.href);
         }, { timeout: timeoutMs });
         return true;
       } catch {
-        return await estaNaPagina5Anos();
+        return ehPagina5Anos(pagina);
       }
     };
 
-    // 1) Tenta pelo link direto para busca/5anos.
-    const linkBusca5Anos = page.locator('a[href*="busca/5anos"]').first();
-    if (await linkBusca5Anos.count()) {
+    const clicarEObterPagina5Anos = async (locator) => {
+      if (!(await locator.count())) return null;
+
+      let popup = null;
+      const popupPromise = context.waitForEvent('page', { timeout: 7000 }).catch(() => null);
+
       try {
-        await Promise.all([
-          page.waitForURL(/\/busca\/5anos/i, { timeout: 12000 }),
-          linkBusca5Anos.click({ timeout: 5000 })
-        ]);
+        await locator.click({ timeout: 5000 });
       } catch {
-        try { await linkBusca5Anos.click({ timeout: 3000 }); } catch (e) {}
+        return null;
       }
 
-      if (await esperarPagina5Anos()) return true;
-    }
+      popup = await popupPromise;
 
-    // 2) Tenta pela linha do resumo "Todas as Infrações (últimos 5 anos)" + lupa.
-    const lupaResumo = page
-      .locator('tr', { hasText: /Todas as Infra[cç][oõ]es\s*\(.*5 anos\)/i })
-      .locator('a, img')
-      .first();
-
-    if (await lupaResumo.count()) {
-      try {
-        await Promise.all([
-          page.waitForLoadState('domcontentloaded', { timeout: 12000 }),
-          lupaResumo.click({ timeout: 5000 })
-        ]);
-      } catch {
-        try { await lupaResumo.click({ timeout: 3000 }); } catch (e) {}
+      if (popup) {
+        try {
+          await popup.waitForLoadState('domcontentloaded', { timeout: 15000 });
+          await popup.bringToFront();
+        } catch (e) {}
+        if (await esperar5Anos(popup, 9000)) return popup;
       }
 
-      if (await esperarPagina5Anos()) return true;
-    }
+      if (await esperar5Anos(page, 9000)) return page;
+      return null;
+    };
 
-    // 3) Fallback final: navega direto no endpoint, preservando host/sessão atual.
+    if (await ehPagina5Anos(page)) return page;
+
+    // 1) Seletor exato informado pelo usuário/devtools.
+    let pagina5Anos = await clicarEObterPagina5Anos(page.locator('#linkConsulta5anos').first());
+    if (pagina5Anos) return pagina5Anos;
+
+    // 2) Lupa da linha "Todas as Infrações (últimos 5 anos)" na tabela de resumo.
+    pagina5Anos = await clicarEObterPagina5Anos(
+      page
+        .locator('tr', { hasText: /Todas as Infra[cç][oõ]es\s*\(.*5 anos\)/i })
+        .locator('a:has(img[src*="lupa"]), a[id*="Consulta5anos"], img.pointer')
+        .first()
+    );
+    if (pagina5Anos) return pagina5Anos;
+
+    // 3) Fallback por URL direta mantendo host/sessão atual.
     try {
       const urlAtual = new URL(page.url());
       const urlBusca5Anos = `${urlAtual.protocol}//${urlAtual.host}/gaideweb2/consultaPontuacao/busca/5anos`;
       await page.goto(urlBusca5Anos, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      if (await esperarPagina5Anos(8000)) return true;
+      if (await esperar5Anos(page, 9000)) return page;
     } catch (e) {}
 
-    return false;
+    return null;
   }
 
   async extrairMultasDetalhadas(page) {
@@ -524,26 +535,22 @@ class PontuacaoAutomation {
       await page.waitForTimeout(500);
     }
 
-    // No DETRAN, o link clicavel costuma ser o codigo do auto (ex.: X41526005),
-    // nao o texto literal "Nº Auto". Portanto, marcamos e clicamos esses links.
+    // Na tela /busca/5anos, cada auto está em um link de accordion (#collapseX).
+    // Precisamos clicar em cada auto para abrir os detalhes completos.
     await this.expandirDetalhesPorNumeroAuto(page);
 
     const multas = await page.evaluate(() => {
-      const texto = (document.body?.innerText || '').replace(/\u00A0/g, ' ');
-      const blocos = texto
-        .split(/(?=N[ºo]\s*Auto\s*:)/i)
-        .map((b) => b.trim())
-        .filter((b) => /N[ºo]\s*Auto\s*:/i.test(b));
-
-      const normalizar = (valor) =>
+      const normalizar = (valor = '') =>
         String(valor || '')
-          .replace(/\s+/g, ' ')
           .replace(/\u00A0/g, ' ')
+          .replace(/[ \t]+\n/g, '\n')
+          .replace(/\n{2,}/g, '\n')
+          .replace(/\s+/g, ' ')
           .trim();
 
-      const safeValor = (valor) => {
+      const safe = (valor) => {
         const limpo = normalizar(valor);
-        if (!limpo || /^[-–—]+$/.test(limpo)) return '-';
+        if (!limpo || /^[-–—*]+$/.test(limpo)) return '-';
         return limpo;
       };
 
@@ -566,30 +573,36 @@ class PontuacaoAutomation {
       };
 
       const todosRotulos = Object.values(r);
-
-      const extrairCampoPorRotulo = (bloco, rotulo) => {
+      const extrair = (texto, rotulo) => {
         const proximos = todosRotulos.filter((item) => item !== rotulo).join('|');
         const regex = new RegExp(`${rotulo}\\s*:\\s*([\\s\\S]*?)(?=\\s*(?:${proximos})\\s*:|$)`, 'i');
-        const match = bloco.match(regex);
-        return safeValor(match?.[1] || '');
+        const match = String(texto || '').match(regex);
+        return safe(match?.[1] || '');
       };
 
-      const dados = blocos.map((bloco) => {
-        const auto = extrairCampoPorRotulo(bloco, r.auto);
-        const dataHora = extrairCampoPorRotulo(bloco, r.data);
-        const orgao = extrairCampoPorRotulo(bloco, r.orgao);
-        const placa = extrairCampoPorRotulo(bloco, r.placa);
-        const proprietario = extrairCampoPorRotulo(bloco, r.proprietario);
-        const responsavel = extrairCampoPorRotulo(bloco, r.responsavel);
-        const situacao = extrairCampoPorRotulo(bloco, r.situacao);
-        const local = extrairCampoPorRotulo(bloco, r.local);
-        const infracao = extrairCampoPorRotulo(bloco, r.infracao);
-        const enquadramento = extrairCampoPorRotulo(bloco, r.enquadramento);
-        const vencimento = extrairCampoPorRotulo(bloco, r.vencimento);
-        const pontos = extrairCampoPorRotulo(bloco, r.pontos);
-        const processo = extrairCampoPorRotulo(bloco, r.processo);
-        const valor = extrairCampoPorRotulo(bloco, r.valor);
-        const valorComDesconto = extrairCampoPorRotulo(bloco, r.valorComDesconto);
+      const paineis = Array.from(document.querySelectorAll('#accordion .panel'));
+      if (!paineis.length) return [];
+
+      return paineis.map((panel) => {
+        const texto = normalizar(panel.innerText || panel.textContent || '');
+
+        const autoSpan = safe(panel.querySelector('.panel-heading .panel-title span')?.textContent || '');
+        const numeroAuto = autoSpan !== '-' ? autoSpan : extrair(texto, r.auto);
+
+        const data = extrair(texto, r.data);
+        const orgao = extrair(texto, r.orgao);
+        const placa = extrair(texto, r.placa);
+        const proprietario = extrair(texto, r.proprietario);
+        const responsavelPontos = extrair(texto, r.responsavel);
+        const situacao = extrair(texto, r.situacao);
+        const local = extrair(texto, r.local);
+        const infracao = extrair(texto, r.infracao);
+        const enquadramento = extrair(texto, r.enquadramento);
+        const vencimento = extrair(texto, r.vencimento);
+        const pontos = extrair(texto, r.pontos);
+        const processo = extrair(texto, r.processo);
+        const valor = extrair(texto, r.valor);
+        const valorComDesconto = extrair(texto, r.valorComDesconto);
 
         let status = 'Pendente';
         if (/paga|quitad|liquid/i.test(situacao)) status = 'Pago';
@@ -597,17 +610,17 @@ class PontuacaoAutomation {
         if (/suspens/i.test(situacao)) status = 'Suspensa';
 
         return {
-          data: dataHora,
-          descricao: infracao !== '-' ? infracao : bloco.slice(0, 200),
+          data,
+          descricao: infracao !== '-' ? infracao : texto.slice(0, 200),
           pontos,
           valor,
           valorComDesconto,
           status,
-          numeroAuto: auto,
+          numeroAuto,
           orgao,
           placa,
           proprietario,
-          responsavelPontos: responsavel,
+          responsavelPontos,
           situacao,
           local,
           infracao,
@@ -616,39 +629,6 @@ class PontuacaoAutomation {
           processo
         };
       });
-
-      // fallback para layout tabular
-      if (!dados.length) {
-        const rows = Array.from(document.querySelectorAll('table tbody tr'));
-        return rows
-          .map((row) => {
-            const cells = Array.from(row.querySelectorAll('td')).map((td) => (td.textContent || '').trim());
-            if (!cells.length) return null;
-            return {
-              data: cells[0] || '-',
-              descricao: cells[1] || 'Infração de trânsito',
-              pontos: cells[2] || '-',
-              valor: cells[3] || '-',
-              valorComDesconto: '-',
-              status: cells[4] || 'Pendente',
-              numeroAuto: null,
-              orgao: '-',
-              placa: '-',
-              proprietario: '-',
-              responsavelPontos: '-',
-              situacao: '-',
-              local: '-',
-              infracao: cells[1] || '-',
-              enquadramento: '-',
-              vencimento: '-',
-              processo: '-'
-            };
-          })
-          .filter(Boolean)
-          .filter((item) => !/infra[cç][oõ]es\s+pontu[aá]veis|infra[cç][oõ]es\s+mandat[oó]rias|todas\s+as\s+infra[cç][oõ]es/i.test(`${item.data} ${item.descricao}`));
-      }
-
-      return dados;
     });
 
     const multasValidas = Array.isArray(multas)
@@ -666,51 +646,57 @@ class PontuacaoAutomation {
   }
 
   async expandirDetalhesPorNumeroAuto(page) {
-    const totalMarcados = await page.evaluate(() => {
-      const normalizar = (valor = '') => String(valor || '').replace(/\s+/g, ' ').trim();
-      const ehCodigoAuto = (valor = '') => /^[A-Z]\d{6,}$/i.test(valor) || /^[A-Z0-9-]{7,}$/i.test(valor);
+    let linksAuto = page.locator('#accordion a[role="button"][href^="#collapse"], #accordion a[data-toggle="collapse"][href^="#collapse"]');
+    let totalLinks = await linksAuto.count();
 
-      let idx = 0;
-      const links = Array.from(document.querySelectorAll('a'));
-      for (const link of links) {
-        link.removeAttribute('data-auto-link-detalhe');
+    // Fallback para layouts antigos
+    if (!totalLinks) {
+      const totalMarcados = await page.evaluate(() => {
+        const normalizar = (valor = '') => String(valor || '').replace(/\s+/g, ' ').trim();
+        const ehCodigoAuto = (valor = '') => /^[A-Z]\d{6,}$/i.test(valor) || /^[A-Z0-9-]{7,}$/i.test(valor);
 
-        const textoLink = normalizar(link.textContent || '');
-        if (!textoLink || !ehCodigoAuto(textoLink)) continue;
+        let idx = 0;
+        const links = Array.from(document.querySelectorAll('a'));
+        for (const link of links) {
+          link.removeAttribute('data-auto-link-detalhe');
+          const textoLink = normalizar(link.textContent || '');
+          if (!textoLink || !ehCodigoAuto(textoLink)) continue;
 
-        const contexto = normalizar(
-          (
-            link.closest('tr, div, td, li, p')?.textContent ||
-            link.parentElement?.textContent ||
-            ''
-          ).slice(0, 700)
-        );
+          const contexto = normalizar(
+            (
+              link.closest('tr, div, td, li, p')?.textContent ||
+              link.parentElement?.textContent ||
+              ''
+            ).slice(0, 700)
+          );
+          if (!/N[º°o]\s*Auto\s*:/i.test(contexto)) continue;
 
-        if (!/N[º°o]\s*Auto\s*:/i.test(contexto)) continue;
-
-        idx += 1;
-        link.setAttribute('data-auto-link-detalhe', String(idx));
-      }
-
-      return idx;
-    });
-
-    if (!totalMarcados) return 0;
-
-    const linksAuto = page.locator('a[data-auto-link-detalhe]');
-    const totalLinks = await linksAuto.count();
+          idx += 1;
+          link.setAttribute('data-auto-link-detalhe', String(idx));
+        }
+        return idx;
+      });
+      if (!totalMarcados) return 0;
+      linksAuto = page.locator('a[data-auto-link-detalhe]');
+      totalLinks = await linksAuto.count();
+    }
 
     for (let i = 0; i < totalLinks; i += 1) {
+      const link = linksAuto.nth(i);
+      const href = await link.getAttribute('href').catch(() => null);
       try {
-        await linksAuto.nth(i).click({ timeout: 4000 });
+        await link.click({ timeout: 4000 });
       } catch (e) {}
-      await page.waitForTimeout(300);
+      if (href && href.startsWith('#')) {
+        await page.waitForSelector(`${href}.in, ${href}.show`, { timeout: 3500 }).catch(() => {});
+      }
+      await page.waitForTimeout(260);
     }
 
     try {
       await page.waitForFunction(() => {
         const texto = (document.body?.innerText || '').replace(/\u00A0/g, ' ');
-        return /Situa[cç][aã]o\s*:|Infra[cç][aã]o\s*:|Enquadramento\s*:/i.test(texto);
+        return /Situa[cç][aã]o\s*:|Infra[cç][aã]o\s*:|Enquadramento\s*:|N[º°o]\s*Auto\s*:/i.test(texto);
       }, { timeout: 6000 });
     } catch (e) {}
 
