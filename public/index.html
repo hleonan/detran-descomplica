@@ -2158,9 +2158,15 @@
 
         const cacheLocal = recuperarMultasCache(cpf, cnh);
         if (cacheLocal) {
-          document.getElementById("multas-loading").style.display = "none";
-          renderMultas(cacheLocal.multas);
-          return;
+          const cacheTemCamposFinanceiros = Array.isArray(cacheLocal.multas) &&
+            cacheLocal.multas.some((m) => campo(m?.valor) !== "-" || campo(m?.vencimento) !== "-" || campo(m?.valorComDesconto) !== "-");
+
+          // Se o cache veio incompleto (todos os autos sem valor/vencimento/desconto), força refresh.
+          if (cacheTemCamposFinanceiros || !Array.isArray(cacheLocal.multas) || cacheLocal.multas.length === 0) {
+            document.getElementById("multas-loading").style.display = "none";
+            renderMultas(cacheLocal.multas);
+            return;
+          }
         }
 
         try {

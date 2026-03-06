@@ -574,6 +574,21 @@ class PontuacaoAutomation {
         return fallback;
       };
 
+      const pickTexto = (textoBruto = '', regexList = [], fallback = '-') => {
+        const fonte = String(textoBruto || '');
+        for (const reg of regexList) {
+          const match = fonte.match(reg);
+          const valor = safe(match?.[1] || '');
+          if (valor !== '-') return valor;
+        }
+        return fallback;
+      };
+
+      const limparValorMonetario = (valor = '-') => {
+        const limpo = safe(String(valor || '').replace(/^R\\$\\s*/i, '').trim());
+        return limpo;
+      };
+
       const extrairPontosNumerico = (texto = '', enquadramento = '', responsavelPontos = '') => {
         const textoTotal = `${texto} ${enquadramento}`;
         const matches = Array.from(String(textoTotal).matchAll(/PONTOS?\s*:\s*([0-9]{1,3}|\*)/gi))
@@ -633,10 +648,34 @@ class PontuacaoAutomation {
         const local = pick(campos, [/^LOCAL$/]);
         const infracao = pick(campos, [/^INFRACAO$/]);
         const enquadramentoComPontos = pick(campos, [/^ENQUADRAMENTO$/]);
-        const vencimento = pick(campos, [/^VENCIMENTO$/]);
+        let vencimento = pick(campos, [/^VENCIMENTO$/]);
         const processo = pick(campos, [/^PROCESSO$/]);
-        const valor = pick(campos, [/^VALOR$/]);
-        const valorComDesconto = pick(campos, [/^VALOR\s+COM\s+DESCONTO$/]);
+        let valor = pick(campos, [/^VALOR$/]);
+        let valorComDesconto = pick(campos, [/^VALOR\s+COM\s+DESCONTO$/]);
+
+        if (valorComDesconto === '-') {
+          valorComDesconto = pickTexto(textoOriginal, [
+            /VALOR\s+COM\s+DESCONTO\s*:\s*([0-9.,]+)/i,
+            /VALOR\s+COM\s+DESCONTO\s*:\s*([-–—*]+)/i
+          ]);
+        }
+
+        if (valor === '-') {
+          valor = pickTexto(textoOriginal, [
+            /(?:^|\s)VALOR\s*:\s*([0-9.,]+)/i,
+            /(?:^|\s)VALOR\s*:\s*([-–—*]+)/i
+          ]);
+        }
+
+        if (vencimento === '-') {
+          vencimento = pickTexto(textoOriginal, [
+            /VENCIMENTO\s*:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i,
+            /VENCIMENTO\s*:\s*([-–—*]+)/i
+          ]);
+        }
+
+        valor = limparValorMonetario(valor);
+        valorComDesconto = limparValorMonetario(valorComDesconto);
 
         const dataPagamentoMatch = String(situacaoBruta || '').match(/PAGA?\s*EM\s*:?\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i);
         const dataPagamento = dataPagamentoMatch ? dataPagamentoMatch[1] : '-';
