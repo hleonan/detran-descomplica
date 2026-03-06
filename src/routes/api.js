@@ -271,17 +271,41 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     }
 
     // --- FLUXO 2: IMAGEM (JPG/PNG - Processamento Direto) ---
-    const apiKey = process.env.GOOGLE_VISION_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "Chave de API Vision não configurada." });
+    const apiKey = process.env.GOOGLE_VISION_API_KEY?.trim();
+    let result = null;
 
-    const ext = req.file.mimetype === "image/png" ? ".png" : ".jpg";
-    const tmpPath = path.join("/tmp", `cnh_upload_${Date.now()}${ext}`);
-    fs.writeFileSync(tmpPath, req.file.buffer);
+    if (apiKey) {
+      const ext = req.file.mimetype === "image/png" ? ".png" : ".jpg";
+      const tmpPath = path.join("/tmp", `cnh_upload_${Date.now()}${ext}`);
+      fs.writeFileSync(tmpPath, req.file.buffer);
 
-    const ocr = new OCRExtractor(apiKey);
-    const result = await ocr.extrairTextoImagem(tmpPath);
+      const ocr = new OCRExtractor(apiKey);
+      result = await ocr.extrairTextoImagem(tmpPath);
 
-    try { fs.unlinkSync(tmpPath); } catch {}
+      try { fs.unlinkSync(tmpPath); } catch {}
+    } else if (visionClient) {
+      const [visionResp] = await visionClient.documentTextDetection({
+        image: { content: req.file.buffer },
+      });
+
+      const textoCompleto =
+        visionResp?.fullTextAnnotation?.text ||
+        visionResp?.textAnnotations?.[0]?.description ||
+        "";
+
+      const ocr = new OCRExtractor(null);
+      const dados = ocr.extrairDadosDoTexto(textoCompleto);
+
+      result = {
+        sucesso: Boolean(textoCompleto),
+        dados,
+        textoCompleto,
+        confianca: ocr.calcularConfianca(dados?.cpf, dados?.cnh),
+        erro: textoCompleto ? null : "Falha na leitura da imagem.",
+      };
+    } else {
+      return res.status(500).json({ error: "OCR de imagem indisponível no servidor." });
+    }
 
     if (!result?.sucesso) {
       return res.status(422).json({ error: result?.erro || "Falha na leitura da imagem." });
