@@ -52,7 +52,7 @@ const OCR_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_OCR_BUCKET = "detran-descomplica-ocr";
 const multasCacheStore = new Map();
 const multasInFlight = new Map();
-const MULTAS_CACHE_TTL_MS = 30 * 60 * 1000;
+const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
 
 function cleanupOCRJobs() {
   const now = Date.now();

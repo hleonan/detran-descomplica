@@ -1484,6 +1484,8 @@
 
       const CERTIDAO_CACHE_KEY = "__ultimaCertidao";
       const CERTIDAO_CACHE_TTL_MS = 60 * 60 * 1000;
+      const MULTAS_CACHE_KEY = "__ultimaConsultaMultas";
+      const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
 
       function salvarCertidaoCache(caseId, pdfBase64 = null) {
         const payload = {
@@ -1533,6 +1535,68 @@
           return cache;
         } catch (err) {
           localStorage.removeItem(CERTIDAO_CACHE_KEY);
+          return null;
+        }
+      }
+
+      function multasConsultaKey(cpf, cnh) {
+        const cpfDigits = onlyDigits(cpf);
+        const cnhDigits = sanitizeCNH(cnh);
+        if (!cpfDigits || !cnhDigits) return null;
+        return `${cpfDigits}:${cnhDigits}`;
+      }
+
+      function salvarMultasCache(cpf, cnh, data = {}) {
+        const key = multasConsultaKey(cpf, cnh);
+        if (!key) return;
+
+        const payload = {
+          key,
+          cpf: onlyDigits(cpf),
+          cnh: sanitizeCNH(cnh),
+          multas: Array.isArray(data.multas) ? data.multas : [],
+          resumo: data?.resumo && typeof data.resumo === "object" ? data.resumo : {},
+          createdAt: Date.now(),
+        };
+
+        window.__lastMultasCache = payload;
+        try {
+          localStorage.setItem(MULTAS_CACHE_KEY, JSON.stringify(payload));
+        } catch (err) {}
+      }
+
+      function recuperarMultasCache(cpf, cnh) {
+        const key = multasConsultaKey(cpf, cnh);
+        if (!key) return null;
+
+        const validarCache = (cache) => {
+          if (!cache?.createdAt || Date.now() - cache.createdAt > MULTAS_CACHE_TTL_MS) return null;
+          const cacheKey = cache.key || multasConsultaKey(cache.cpf, cache.cnh);
+          if (!cacheKey || cacheKey !== key) return null;
+          return {
+            multas: Array.isArray(cache.multas) ? cache.multas : [],
+            resumo: cache?.resumo && typeof cache.resumo === "object" ? cache.resumo : {},
+            createdAt: cache.createdAt,
+          };
+        };
+
+        const cacheMemoria = validarCache(window.__lastMultasCache);
+        if (cacheMemoria) return cacheMemoria;
+
+        try {
+          const raw = localStorage.getItem(MULTAS_CACHE_KEY);
+          if (!raw) return null;
+          const cacheLocal = JSON.parse(raw);
+          const cacheValido = validarCache(cacheLocal);
+          if (!cacheValido) {
+            localStorage.removeItem(MULTAS_CACHE_KEY);
+            return null;
+          }
+
+          window.__lastMultasCache = cacheLocal;
+          return cacheValido;
+        } catch (err) {
+          localStorage.removeItem(MULTAS_CACHE_KEY);
           return null;
         }
       }
@@ -1967,46 +2031,73 @@
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#039;");
 
+        const normalizar = (valor) => String(valor ?? "").replace(/\s+/g, " ").trim();
+
         const campo = (valor) => {
-          const limpo = String(valor ?? "").trim();
+          const limpo = normalizar(valor);
           return limpo && limpo.toLowerCase() !== "null" ? limpo : "-";
+        };
+
+        const limparStatusAtual = (statusAtual, situacao) => {
+          const base = campo(statusAtual) !== "-" ? campo(statusAtual) : campo(situacao);
+          if (base === "-") return "-";
+
+          const limpo = base
+            .replace(/[-–—]?\s*PAGA?\s*EM\s*:?\s*[0-9]{2}\/[0-9]{2}\/[0-9]{4}/gi, " ")
+            .replace(/\bN[AÃ]O\s*PAGA\b/gi, " ")
+            .replace(/\bPAGA\b/gi, " ")
+            .replace(/\bQUITAD[AO]?\b/gi, " ")
+            .replace(/\bLIQUIDAD[AO]?\b/gi, " ")
+            .replace(/\s*[-–—]\s*/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+
+          return campo(limpo);
+        };
+
+        const infoPagamentoMulta = (m) => {
+          const pagamentoStatus = normalizar(m?.pagamentoStatus).toUpperCase();
+          const dataPagamento = campo(m?.dataPagamento);
+          const situacao = campo(m?.situacao);
+          const informacaoBruta = campo(m?.informacaoPagamento);
+
+          if (pagamentoStatus === "PAGA") {
+            return dataPagamento !== "-" ? `PAGA em ${dataPagamento}` : "PAGA";
+          }
+          if (pagamentoStatus === "NAO PAGA" || pagamentoStatus === "NÃO PAGA") {
+            return "NAO PAGA";
+          }
+          if (/PAGA?\s*EM/i.test(situacao)) {
+            const data = situacao.match(/PAGA?\s*EM\s*:?\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i)?.[1] || "-";
+            return data !== "-" ? `PAGA em ${data}` : "PAGA";
+          }
+          if (/N[AÃ]O\s*PAGA/i.test(situacao)) return "NAO PAGA";
+          if (informacaoBruta !== "-" && /PAGA?\s*EM|N[AÃ]O\s*PAGA/i.test(informacaoBruta)) return informacaoBruta;
+          return "-";
+        };
+
+        const statusBadge = (m) => {
+          const pagamentoStatus = normalizar(m?.pagamentoStatus).toUpperCase();
+          const situacao = campo(m?.situacao);
+
+          if (pagamentoStatus === "PAGA" || /PAGA?\s*EM|QUITAD|LIQUID/i.test(situacao)) return "Pago";
+          if (pagamentoStatus === "NAO PAGA" || pagamentoStatus === "NÃO PAGA" || /N[AÃ]O\s*PAGA/i.test(situacao)) return "Nao Pago";
+          if (/cancelad/i.test(situacao)) return "Cancelada";
+          return "Pendente";
         };
 
         const classeStatus = (status) => {
           const s = String(status || "").toLowerCase();
+          if (s.includes("nao pago") || s.includes("não pago")) return "status-pendente";
           if (s.includes("pago")) return "status-pago";
           if (s.includes("cancel")) return "status-cancelada";
-          if (s.includes("suspens")) return "status-suspensa";
           return "status-pendente";
         };
-       
-        if (!cpf || !cnh) {
-          document.getElementById("multas-subtitle").innerText = "Dados não disponíveis. Volte e faça a consulta primeiro.";
-          document.getElementById("multas-loading").style.display = "none";
-          return;
-        }
 
-        try {
-          const resp = await fetch(`${API_URL}/consultar-multas`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf, cnh })
-          });
-          const bodyText = await resp.text();
-          let data;
-          try {
-            data = bodyText ? JSON.parse(bodyText) : {};
-          } catch (e) {
-            data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
-          }
-          document.getElementById("multas-loading").style.display = "none";
+        const renderMultas = (multas) => {
+          const itens = Array.isArray(multas) ? multas : [];
 
-          if (!data.ok) {
-            document.getElementById("multas-subtitle").innerText = formatarErroMultas(data, resp.status);
-            return;
-          }
-
-          if (!data.multas || data.multas.length === 0) {
+          if (!itens.length) {
             document.getElementById("multas-subtitle").innerText = "Nenhuma multa encontrada.";
             document.getElementById("multas-lista").innerHTML = `
               <div class="multas-empty">
@@ -2017,14 +2108,14 @@
             return;
           }
 
-          document.getElementById("multas-subtitle").innerText = `${data.multas.length} infração(ões) encontrada(s).`;
-
+          document.getElementById("multas-subtitle").innerText = `${itens.length} infração(ões) encontrada(s).`;
           let html = "";
-          data.multas.forEach((m) => {
-            const status = campo(m.status || "Pendente");
+
+          itens.forEach((m) => {
+            const status = statusBadge(m);
             const infracaoDetalhe = campo(m.infracao !== "-" ? m.infracao : m.descricao);
-            const statusAtual = campo(m.statusAtual || m.situacao);
-            const infoPagamento = campo(m.informacaoPagamento);
+            const statusAtual = limparStatusAtual(m.statusAtual, m.situacao);
+            const infoPagamento = infoPagamentoMulta(m);
             const pontosValor = campo(m.pontos);
             const classePontos = pontosValor !== "-" ? "detalhe-value detalhe-pontos" : "detalhe-value";
 
@@ -2055,7 +2146,49 @@
                 </div>
               </div>`;
           });
+
           document.getElementById("multas-lista").innerHTML = html;
+        };
+       
+        if (!cpf || !cnh) {
+          document.getElementById("multas-subtitle").innerText = "Dados não disponíveis. Volte e faça a consulta primeiro.";
+          document.getElementById("multas-loading").style.display = "none";
+          return;
+        }
+
+        const cacheLocal = recuperarMultasCache(cpf, cnh);
+        if (cacheLocal) {
+          document.getElementById("multas-loading").style.display = "none";
+          renderMultas(cacheLocal.multas);
+          return;
+        }
+
+        try {
+          const resp = await fetch(`${API_URL}/consultar-multas`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cpf, cnh })
+          });
+          const bodyText = await resp.text();
+          let data;
+          try {
+            data = bodyText ? JSON.parse(bodyText) : {};
+          } catch (e) {
+            data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+          }
+          document.getElementById("multas-loading").style.display = "none";
+
+          if (!data.ok) {
+            document.getElementById("multas-subtitle").innerText = formatarErroMultas(data, resp.status);
+            return;
+          }
+
+          salvarMultasCache(cpf, cnh, {
+            multas: Array.isArray(data.multas) ? data.multas : [],
+            resumo: data?.resumo || {},
+          });
+
+          renderMultas(data.multas);
 
         } catch (err) {
           document.getElementById("multas-loading").style.display = "none";

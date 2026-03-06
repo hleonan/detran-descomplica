@@ -640,9 +640,9 @@ class PontuacaoAutomation {
 
         const dataPagamentoMatch = String(situacaoBruta || '').match(/PAGA?\s*EM\s*:?\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i);
         const dataPagamento = dataPagamentoMatch ? dataPagamentoMatch[1] : '-';
-        const pagamentoStatus = /PAGA?\s*EM/i.test(situacaoBruta)
+        const pagamentoStatus = /PAGA?\s*EM|QUITAD|LIQUID/i.test(situacaoBruta)
           ? 'PAGA'
-          : /NAO\s*PAGA|N[AÃ]O\s*PAGA/i.test(situacaoBruta)
+          : /N[AÃ]O\s*PAGA/i.test(situacaoBruta)
           ? 'NAO PAGA'
           : '-';
         const informacaoPagamento = pagamentoStatus === '-'
@@ -651,11 +651,16 @@ class PontuacaoAutomation {
 
         const statusAtualLimpo = safe(
           String(situacaoBruta || '')
-            .replace(/[-–—]?\s*PAGA?\s*EM\s*:?\s*[0-9]{2}\/[0-9]{2}\/[0-9]{4}/ig, '')
+            .replace(/[-–—]?\s*PAGA?\s*EM\s*:?\s*[0-9]{2}\/[0-9]{2}\/[0-9]{4}/ig, ' ')
+            .replace(/\bN[AÃ]O\s*PAGA\b/ig, ' ')
+            .replace(/\bPAGA\b/ig, ' ')
+            .replace(/\bQUITAD[AO]?\b/ig, ' ')
+            .replace(/\bLIQUIDAD[AO]?\b/ig, ' ')
+            .replace(/\s*[-–—]\s*/g, ' ')
             .replace(/\s{2,}/g, ' ')
             .trim()
         );
-        const statusAtual = statusAtualLimpo === '-' ? safe(situacaoBruta) : statusAtualLimpo;
+        const statusAtual = statusAtualLimpo;
 
         const pontos = extrairPontosNumerico(texto, enquadramentoComPontos, responsavelPontos);
         const enquadramento = safe(
@@ -666,9 +671,9 @@ class PontuacaoAutomation {
         );
 
         let status = 'Pendente';
-        if (/paga|quitad|liquid/i.test(situacaoBruta)) status = 'Pago';
-        if (/cancelad/i.test(situacaoBruta)) status = 'Cancelada';
-        if (/suspens/i.test(situacaoBruta)) status = 'Suspensa';
+        if (pagamentoStatus === 'PAGA') status = 'Pago';
+        else if (pagamentoStatus === 'NAO PAGA') status = 'Nao Pago';
+        else if (/cancelad/i.test(situacaoBruta)) status = 'Cancelada';
 
         return {
           data,
