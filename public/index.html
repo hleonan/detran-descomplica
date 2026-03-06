@@ -1323,8 +1323,12 @@
         const cache = recuperarCertidaoCache();
         if (!cache) return null;
 
-        if (cache.temCassacao || cache.status === "CASSACAO") return "cassacao";
-        if (cache.temSuspensao || cache.status === "SUSPENSAO") return "suspensao";
+        const temCassacao = Boolean(cache.temCassacao || cache.status === "CASSACAO");
+        const temSuspensao = Boolean(cache.temSuspensao || cache.status === "SUSPENSAO");
+
+        if (temCassacao && temSuspensao) return "ambos";
+        if (temCassacao) return "cassacao";
+        if (temSuspensao) return "suspensao";
         return null;
       }
 
@@ -1340,7 +1344,12 @@
           card.setAttribute("aria-disabled", "false");
           card.dataset.tipoProcesso = tipo;
           btn.disabled = false;
-          btn.innerText = tipo === "cassacao" ? "Consultar Cassação" : "Consultar Processo";
+          btn.innerText =
+            tipo === "cassacao"
+              ? "Consultar Cassação"
+              : tipo === "ambos"
+              ? "Consultar Processos"
+              : "Consultar Processo";
           return;
         }
 
@@ -2441,18 +2450,37 @@
         const dataPrimeiraHabilitacao = normalizeDateBR(
           identidadeConsulta?.dataPrimeiraHabilitacao || document.getElementById("dataPrimeiraHabilitacao")?.value || ""
         );
-        const tipo = String(
+
+        const tipoDetectadoCertidao = (() => {
+          const temCassacao = Boolean(certidaoCache?.temCassacao || certidaoCache?.status === "CASSACAO");
+          const temSuspensao = Boolean(certidaoCache?.temSuspensao || certidaoCache?.status === "SUSPENSAO");
+          if (temCassacao && temSuspensao) return "ambos";
+          if (temCassacao) return "cassacao";
+          if (temSuspensao) return "suspensao";
+          return "suspensao";
+        })();
+
+        const tipoSolicitado = String(
           options?.tipo ||
           document.getElementById("service-card-processo")?.dataset?.tipoProcesso ||
-          (certidaoCache?.temCassacao || certidaoCache?.status === "CASSACAO" ? "cassacao" : "suspensao")
-        ).toLowerCase() === "cassacao" ? "cassacao" : "suspensao";
+          tipoDetectadoCertidao
+        ).toLowerCase();
+
+        const tiposConsulta = tipoSolicitado === "ambos"
+          ? ["suspensao", "cassacao"]
+          : [tipoSolicitado === "cassacao" ? "cassacao" : "suspensao"];
+
         const subtitleEl = document.getElementById("processo-subtitle");
         const loadingEl = document.getElementById("processo-loading");
         const listaEl = document.getElementById("processo-lista");
         const refreshBtn = document.getElementById("btn-refresh-processo");
         const lastUpdateEl = document.getElementById("processo-last-update");
         const forceRefresh = Boolean(options?.ignorarCache);
-        const tipoLabel = tipo === "cassacao" ? "cassação" : "suspensão";
+        const tipoLabel = tiposConsulta.length > 1
+          ? "suspensão e cassação"
+          : tiposConsulta[0] === "cassacao"
+          ? "cassação"
+          : "suspensão";
 
         const setRefreshState = (loading) => {
           if (!refreshBtn) return;
@@ -2462,7 +2490,7 @@
 
         const setLastUpdate = (timestampMs) => {
           if (!lastUpdateEl) return;
-          if (!Number.isFinite(timestampMs)) {
+          if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
             lastUpdateEl.innerText = "";
             return;
           }
@@ -2548,31 +2576,41 @@
             </div>`;
         };
 
-        const renderProcessos = (dados = {}) => {
-          const condutor = dados?.condutor && typeof dados.condutor === "object" ? dados.condutor : {};
-          const processos = Array.isArray(dados?.processos) ? dados.processos : [];
-          const mensagem = campo(dados?.mensagem);
-
+        const renderProcessos = (dados = []) => {
           if (!listaEl) return;
 
-          if (!processos.length) {
+          const grupos = (Array.isArray(dados) ? dados : [dados])
+            .filter(Boolean)
+            .map((g) => ({
+              tipo: String(g?.tipo || "suspensao").toLowerCase() === "cassacao" ? "cassacao" : "suspensao",
+              condutor: g?.condutor && typeof g.condutor === "object" ? g.condutor : {},
+              processos: Array.isArray(g?.processos) ? g.processos : [],
+              mensagem: g?.mensagem || null,
+              createdAt: Number(g?.createdAt) || 0,
+            }));
+
+          const totalProcessos = grupos.reduce((acc, g) => acc + g.processos.length, 0);
+          const condutor = grupos.find((g) => campo(g?.condutor?.nome) !== "-")?.condutor || grupos[0]?.condutor || {};
+          const mensagemGeral = grupos.map((g) => campo(g.mensagem)).find((m) => m !== "-") || "-";
+
+          if (!totalProcessos) {
             subtitleEl.innerText = `Nenhum processo de ${tipoLabel} encontrado.`;
             listaEl.innerHTML = `
               <div class="multas-empty">
                 <div class="multas-empty-icon">✅</div>
                 <div class="multas-empty-title">Sem Processo Ativo</div>
-                <div class="multas-empty-text">${escapeHtml(mensagem !== "-" ? mensagem : "Nenhum processo encontrado para os dados informados.")}</div>
+                <div class="multas-empty-text">${escapeHtml(mensagemGeral !== "-" ? mensagemGeral : "Nenhum processo encontrado para os dados informados.")}</div>
               </div>`;
             return;
           }
 
-          subtitleEl.innerText = `${processos.length} processo(s) de ${tipoLabel} encontrado(s).`;
+          subtitleEl.innerText = `${totalProcessos} processo(s) de ${tipoLabel} encontrado(s).`;
 
           let html = `
             <div class="multa-card">
               <div class="multa-header">
                 <div class="multa-auto">Dados do Condutor</div>
-                <span class="multa-status status-pendente">${tipo === "cassacao" ? "Cassação" : "Suspensão"}</span>
+                <span class="multa-status status-pendente">${grupos.length > 1 ? "Suspensão/Cassação" : grupos[0].tipo === "cassacao" ? "Cassação" : "Suspensão"}</span>
               </div>
               <div class="multa-head-grid">
                 <div class="multa-head-item"><span class="multa-head-label">Nome:</span> ${escapeHtml(campo(condutor?.nome))}</div>
@@ -2581,32 +2619,55 @@
               </div>
             </div>`;
 
-          processos.forEach((processo) => {
-            const detalhes = processo?.detalhes && typeof processo.detalhes === "object" ? processo.detalhes : {};
-            const dadosProcesso = detalhes?.dadosProcesso && typeof detalhes.dadosProcesso === "object" ? detalhes.dadosProcesso : {};
-            const situacao = campo(dadosProcesso?.situacaoAtual || processo?.situacaoAtual);
-            const dataProcesso = campo(dadosProcesso?.dataProcesso || processo?.dataProcesso);
-            const prazoSuspensao = campo(dadosProcesso?.prazoSuspensao || processo?.prazoSuspensao);
-            const totalMultas = campo(dadosProcesso?.totalMultas || processo?.totalMultas);
-            const totalPontos = campo(dadosProcesso?.totalPontos || processo?.totalPontos);
-            const numero = campo(dadosProcesso?.numeroProcesso || processo?.numeroProcesso);
+          grupos.forEach((grupo) => {
+            const tipoGrupoLabel = grupo.tipo === "cassacao" ? "Cassação" : "Suspensão";
 
-            html += `
-              <div class="multa-card">
-                <div class="multa-header">
-                  <div class="multa-auto">Processo: ${escapeHtml(numero)}</div>
-                  <span class="multa-status ${statusClasseProcesso(situacao)}">${escapeHtml(situacao)}</span>
-                </div>
-                <div class="multa-detalhes">
-                  <div class="multa-detalhe"><span class="detalhe-label">Data do Processo</span><span class="detalhe-value">${escapeHtml(dataProcesso)}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Prazo Suspensão</span><span class="detalhe-value">${escapeHtml(prazoSuspensao)}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Total de Multas</span><span class="detalhe-value">${escapeHtml(totalMultas)}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Total de Pontos</span><span class="detalhe-value">${escapeHtml(totalPontos)}</span></div>
-                </div>
-                ${renderTabelaChaveValor("Prazos do Processo", Array.isArray(detalhes?.prazos) ? detalhes.prazos : [])}
-                ${renderTabelaInfracoes(Array.isArray(detalhes?.infracoes) ? detalhes.infracoes : [])}
-                ${renderTabelaChaveValor("Andamentos", Array.isArray(detalhes?.andamentos) ? detalhes.andamentos : [])}
-              </div>`;
+            if (grupos.length > 1) {
+              html += `
+                <div class="processo-subsection">
+                  <div class="processo-subtitle">Processos de ${escapeHtml(tipoGrupoLabel)}</div>
+                </div>`;
+            }
+
+            if (!grupo.processos.length) {
+              html += `
+                <div class="multa-card">
+                  <div class="multa-header">
+                    <div class="multa-auto">Sem processos de ${escapeHtml(tipoGrupoLabel.toLowerCase())}</div>
+                    <span class="multa-status status-cancelada">Sem registros</span>
+                  </div>
+                  <div class="multas-empty-text">${escapeHtml(campo(grupo.mensagem) !== "-" ? campo(grupo.mensagem) : "Nenhum processo encontrado para este tipo.")}</div>
+                </div>`;
+              return;
+            }
+
+            grupo.processos.forEach((processo) => {
+              const detalhes = processo?.detalhes && typeof processo.detalhes === "object" ? processo.detalhes : {};
+              const dadosProcesso = detalhes?.dadosProcesso && typeof detalhes.dadosProcesso === "object" ? detalhes.dadosProcesso : {};
+              const situacao = campo(dadosProcesso?.situacaoAtual || processo?.situacaoAtual);
+              const dataProcesso = campo(dadosProcesso?.dataProcesso || processo?.dataProcesso);
+              const prazoSuspensao = campo(dadosProcesso?.prazoSuspensao || processo?.prazoSuspensao);
+              const totalMultas = campo(dadosProcesso?.totalMultas || processo?.totalMultas);
+              const totalPontos = campo(dadosProcesso?.totalPontos || processo?.totalPontos);
+              const numero = campo(dadosProcesso?.numeroProcesso || processo?.numeroProcesso);
+
+              html += `
+                <div class="multa-card">
+                  <div class="multa-header">
+                    <div class="multa-auto">Processo: ${escapeHtml(numero)}</div>
+                    <span class="multa-status ${statusClasseProcesso(situacao)}">${escapeHtml(situacao)}</span>
+                  </div>
+                  <div class="multa-detalhes">
+                    <div class="multa-detalhe"><span class="detalhe-label">Data do Processo</span><span class="detalhe-value">${escapeHtml(dataProcesso)}</span></div>
+                    <div class="multa-detalhe"><span class="detalhe-label">Prazo Suspensão</span><span class="detalhe-value">${escapeHtml(prazoSuspensao)}</span></div>
+                    <div class="multa-detalhe"><span class="detalhe-label">Total de Multas</span><span class="detalhe-value">${escapeHtml(totalMultas)}</span></div>
+                    <div class="multa-detalhe"><span class="detalhe-label">Total de Pontos</span><span class="detalhe-value">${escapeHtml(totalPontos)}</span></div>
+                  </div>
+                  ${renderTabelaChaveValor("Prazos do Processo", Array.isArray(detalhes?.prazos) ? detalhes.prazos : [])}
+                  ${renderTabelaInfracoes(Array.isArray(detalhes?.infracoes) ? detalhes.infracoes : [])}
+                  ${renderTabelaChaveValor("Andamentos", Array.isArray(detalhes?.andamentos) ? detalhes.andamentos : [])}
+                </div>`;
+            });
           });
 
           listaEl.innerHTML = html;
@@ -2634,60 +2695,91 @@
           return;
         }
 
-        const cacheLocal = forceRefresh ? null : recuperarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo);
-        if (!forceRefresh && cacheLocal) {
-          if (loadingEl) loadingEl.style.display = "none";
-          renderProcessos(cacheLocal);
-          setLastUpdate(cacheLocal.createdAt);
-          setRefreshState(false);
-          return;
-        }
+        const gruposResultado = [];
+        const errosConsulta = [];
 
         try {
-          const resp = await fetch(`${API_URL}/consultar-processo-cnh`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              cpf,
-              cnh,
-              dataNascimento,
-              dataPrimeiraHabilitacao,
-              tipo,
-              forceRefresh,
-            }),
-          });
+          for (const tipoItem of tiposConsulta) {
+            const cacheLocal = forceRefresh
+              ? null
+              : recuperarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipoItem);
 
-          const bodyText = await resp.text();
-          let data;
-          try {
-            data = bodyText ? JSON.parse(bodyText) : {};
-          } catch (e) {
-            data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+            if (cacheLocal) {
+              gruposResultado.push({
+                tipo: tipoItem,
+                condutor: cacheLocal?.condutor || null,
+                processos: Array.isArray(cacheLocal?.processos) ? cacheLocal.processos : [],
+                mensagem: cacheLocal?.mensagem || null,
+                createdAt: Number(cacheLocal?.createdAt) || Date.now(),
+              });
+              continue;
+            }
+
+            const resp = await fetch(`${API_URL}/consultar-processo-cnh`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                cpf,
+                cnh,
+                dataNascimento,
+                dataPrimeiraHabilitacao,
+                tipo: tipoItem,
+                forceRefresh,
+              }),
+            });
+
+            const bodyText = await resp.text();
+            let data;
+            try {
+              data = bodyText ? JSON.parse(bodyText) : {};
+            } catch (e) {
+              data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+            }
+
+            if (!data.ok) {
+              const tipoErro = tipoItem === "cassacao" ? "cassação" : "suspensão";
+              errosConsulta.push(`${tipoErro}: ${formatarErroProcesso(data, resp.status)}`);
+              continue;
+            }
+
+            const momentoAtualizacao = Date.now();
+            const resultado = {
+              tipo: tipoItem,
+              condutor: data?.condutor || null,
+              processos: Array.isArray(data?.processos) ? data.processos : [],
+              mensagem: data?.mensagem || null,
+              createdAt: momentoAtualizacao,
+            };
+
+            salvarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipoItem, {
+              condutor: resultado.condutor,
+              processos: resultado.processos,
+              mensagem: resultado.mensagem,
+              createdAt: momentoAtualizacao,
+            });
+
+            gruposResultado.push(resultado);
           }
 
           if (loadingEl) loadingEl.style.display = "none";
 
-          if (!data.ok) {
-            subtitleEl.innerText = formatarErroProcesso(data, resp.status);
+          if (!gruposResultado.length) {
+            subtitleEl.innerText = errosConsulta[0] || "Erro ao consultar processo administrativo.";
             setLastUpdate(null);
-            setRefreshState(false);
             return;
           }
 
-          const momentoAtualizacao = Date.now();
-          const resultado = {
-            condutor: data?.condutor || null,
-            processos: Array.isArray(data?.processos) ? data.processos : [],
-            mensagem: data?.mensagem || null,
-          };
+          renderProcessos(gruposResultado);
 
-          salvarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo, {
-            ...resultado,
-            createdAt: momentoAtualizacao,
-          });
+          const ultimaAtualizacao = Math.max(
+            ...gruposResultado.map((g) => Number(g?.createdAt) || 0),
+            0
+          );
+          setLastUpdate(ultimaAtualizacao > 0 ? ultimaAtualizacao : Date.now());
 
-          renderProcessos(resultado);
-          setLastUpdate(momentoAtualizacao);
+          if (errosConsulta.length) {
+            subtitleEl.innerText = `${subtitleEl.innerText} (consulta parcial)`;
+          }
         } catch (err) {
           if (loadingEl) loadingEl.style.display = "none";
           subtitleEl.innerText = "Erro: " + err.message;

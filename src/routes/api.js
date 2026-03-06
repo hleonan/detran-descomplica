@@ -720,23 +720,28 @@ router.post("/consultar-certidao", async (req, res) => {
       dataPrimeiraHabilitacaoBr &&
       process.env.TWOCAPTCHA_API_KEY
     ) {
-      const tipoProcessoPrefetch = analise.temCassacao ? "cassacao" : "suspensao";
-      consultarProcessoComCache(
-        cpfDigits,
-        cnhDigits,
-        dataNascimentoBr,
-        dataPrimeiraHabilitacaoBr,
-        tipoProcessoPrefetch,
-        process.env.TWOCAPTCHA_API_KEY
-      )
-        .then(() => {
-          console.log(`[PROCESSO] Prefetch concluído para ${cpfDigits} (${tipoProcessoPrefetch}).`);
-        })
-        .catch((err) => {
-          console.warn(
-            `[PROCESSO] Prefetch falhou para ${cpfDigits} (${tipoProcessoPrefetch}): ${err?.message || err}`
-          );
-        });
+      const tiposProcessoPrefetch = [];
+      if (analise.temSuspensao) tiposProcessoPrefetch.push("suspensao");
+      if (analise.temCassacao) tiposProcessoPrefetch.push("cassacao");
+
+      tiposProcessoPrefetch.forEach((tipoProcessoPrefetch) => {
+        consultarProcessoComCache(
+          cpfDigits,
+          cnhDigits,
+          dataNascimentoBr,
+          dataPrimeiraHabilitacaoBr,
+          tipoProcessoPrefetch,
+          process.env.TWOCAPTCHA_API_KEY
+        )
+          .then(() => {
+            console.log(`[PROCESSO] Prefetch concluído para ${cpfDigits} (${tipoProcessoPrefetch}).`);
+          })
+          .catch((err) => {
+            console.warn(
+              `[PROCESSO] Prefetch falhou para ${cpfDigits} (${tipoProcessoPrefetch}): ${err?.message || err}`
+            );
+          });
+      });
     }
 
     const payload = {
