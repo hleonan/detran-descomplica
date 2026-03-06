@@ -84,7 +84,15 @@ class OCRExtractor {
    * Extrair dados específicos da CNH a partir do texto OCR
    */
   extrairDadosDoTexto(texto) {
-    if (!texto) return { cpf: null, cnh: null, nome: null };
+    if (!texto) {
+      return {
+        cpf: null,
+        cnh: null,
+        nome: null,
+        dataNascimento: null,
+        dataPrimeiraHabilitacao: null,
+      };
+    }
 
     // Extrair CPF (padrão: XXX.XXX.XXX-XX ou XXXXXXXXXXX)
     const cpfMatch = texto.match(/(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
@@ -119,10 +127,34 @@ class OCRExtractor {
     const nomeMatch = texto.match(/Nome[:\s]*([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇa-záéíóúâêîôûãõç\s]+)/i);
     const nome = nomeMatch ? nomeMatch[1].trim() : null;
 
+    const normalizarData = (valor) => {
+      const textoData = String(valor || '').trim();
+      if (!textoData) return null;
+      const digits = textoData.replace(/\D/g, '');
+      if (digits.length !== 8) return null;
+      return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    };
+
+    const extrairDataPorRotulo = (regexRotulo) => {
+      const match = texto.match(new RegExp(`${regexRotulo.source}[^\\n\\r\\d]{0,25}(\\d{2}[\\/\\-.]\\d{2}[\\/\\-.]\\d{4})`, 'i'));
+      if (match?.[1]) return normalizarData(match[1]);
+      return null;
+    };
+
+    const dataNascimento =
+      extrairDataPorRotulo(/DATA\s+NASC(?:IMENTO)?/) ||
+      extrairDataPorRotulo(/NASCIMENTO/);
+
+    const dataPrimeiraHabilitacao =
+      extrairDataPorRotulo(/1\s*[ªA]?\s*HABILITA/) ||
+      extrairDataPorRotulo(/PRIMEIRA\s+HABILITA/);
+
     return {
       cpf: cpf,
       cnh: cnh,
-      nome: nome
+      nome: nome,
+      dataNascimento,
+      dataPrimeiraHabilitacao
     };
   }
 

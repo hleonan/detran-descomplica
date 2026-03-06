@@ -625,6 +625,21 @@
             border-color: #00D4FF;
         }
 
+        .service-card.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(0.2);
+            border-color: transparent;
+            transform: none !important;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08) !important;
+        }
+
+        .service-card.disabled:hover {
+            transform: none;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            border-color: transparent;
+        }
+
         .service-icon { font-size: 50px; margin-bottom: 15px; }
         .service-title { font-size: 18px; color: #003D7A; font-weight: 700; margin-bottom: 10px; }
         .service-description { font-size: 14px; color: #666; margin-bottom: 20px; line-height: 1.6; }
@@ -642,6 +657,11 @@
         }
 
         .btn-service:hover { transform: scale(1.05); }
+        .btn-service:disabled {
+            cursor: not-allowed;
+            opacity: 0.65;
+            transform: none !important;
+        }
 
         /* MULTAS */
         .multas-lista { display: grid; gap: 20px; }
@@ -725,6 +745,56 @@
         .multas-empty-icon { font-size: 80px; margin-bottom: 20px; }
         .multas-empty-title { font-size: 24px; color: #003D7A; font-weight: 700; margin-bottom: 10px; }
         .multas-empty-text { font-size: 16px; color: #666; font-weight: 600; }
+
+        .processo-subsection {
+            margin-top: 16px;
+        }
+
+        .processo-subtitle {
+            font-size: 13px;
+            color: #003D7A;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin-bottom: 10px;
+        }
+
+        .processo-table-wrap {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid #d9e2ef;
+            border-radius: 10px;
+            background: #fff;
+        }
+
+        .processo-table {
+            width: 100%;
+            min-width: 820px;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .processo-table th,
+        .processo-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eef3f8;
+            text-align: left;
+            vertical-align: top;
+            color: #1d3557;
+        }
+
+        .processo-table th {
+            background: #f0f6ff;
+            color: #003D7A;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.3px;
+        }
+
+        .processo-table tbody tr:last-child td {
+            border-bottom: none;
+        }
 
         .loading-spinner { text-align: center; padding: 40px; }
         .spinner {
@@ -969,6 +1039,16 @@
                         <input type="text" id="cnh" placeholder="00000000000" maxlength="11" required inputmode="numeric">
                     </div>
 
+                    <div class="form-group">
+                        <label for="dataNascimento">Data de Nascimento</label>
+                        <input type="text" id="dataNascimento" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dataPrimeiraHabilitacao">Data da 1ª Habilitação</label>
+                        <input type="text" id="dataPrimeiraHabilitacao" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric">
+                    </div>
+
                     <div class="divider">OU ENVIE SUA CNH</div>
 
                     <div class="input-methods">
@@ -1047,11 +1127,11 @@
                         <p class="service-description">Veja todas as suas multas com detalhes completos</p>
                         <button class="btn-service" onclick="selectService('multas', event)">Ver Multas</button>
                     </div>
-                    <div class="service-card" onclick="selectService('suspensao', event)">
+                    <div id="service-card-processo" class="service-card disabled" onclick="selectService('suspensao', event)" aria-disabled="true">
                         <div class="service-icon">⛔</div>
                         <h3 class="service-title">SUSPENSÃO/CASSAÇÃO CNH</h3>
-                        <p class="service-description">Veja seus processos administrativo de SUSPENSÃO ou CASSAÇÃO</p>
-                        <button class="btn-service">Consultar Processo</button>
+                        <p class="service-description">Veja seus processos administrativos de SUSPENSÃO ou CASSAÇÃO</p>
+                        <button id="btn-service-processo" class="btn-service" disabled>Consultar Processo</button>
                     </div>
                     <div class="service-card" onclick="selectService('recurso', event)">
                         <div class="service-icon">⚖️</div>
@@ -1078,6 +1158,25 @@
                 <div id="multas-loading" class="loading-spinner">
                     <div class="spinner"></div>
                     <p>Consultando multas no DETRAN-RJ...</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="screen7" class="screen">
+            <button class="btn-back" onclick="goToScreen4()">← Voltar</button>
+            <div class="data-entry-section" style="max-width: 1200px;">
+                <div class="section-header">
+                    <h2 class="section-title">Processo de Suspensão/Cassação</h2>
+                    <p class="section-subtitle" id="processo-subtitle">Carregando andamento do processo...</p>
+                    <div class="section-actions">
+                        <button id="btn-refresh-processo" class="btn-refresh" onclick="atualizarProcesso(event)">Atualizar dados</button>
+                    </div>
+                    <p class="section-meta" id="processo-last-update"></p>
+                </div>
+                <div id="processo-lista" class="multas-lista"></div>
+                <div id="processo-loading" class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Consultando processo no DETRAN-RJ...</p>
                 </div>
             </div>
         </div>
@@ -1168,6 +1267,8 @@
       function limparDadosConsulta() {
         const cpfField = document.getElementById("cpf");
         const cnhField = document.getElementById("cnh");
+        const dataNascimentoField = document.getElementById("dataNascimento");
+        const dataPrimeiraHabilitacaoField = document.getElementById("dataPrimeiraHabilitacao");
         const previewContainer = document.getElementById("photoPreview");
         const previewImg = document.getElementById("photoPreviewImg");
         const fileUpload = document.getElementById("fileUpload");
@@ -1181,6 +1282,16 @@
         if (cnhField) {
           cnhField.value = "";
           cnhField.classList.remove("filled-by-ocr");
+        }
+
+        if (dataNascimentoField) {
+          dataNascimentoField.value = "";
+          dataNascimentoField.classList.remove("filled-by-ocr");
+        }
+
+        if (dataPrimeiraHabilitacaoField) {
+          dataPrimeiraHabilitacaoField.value = "";
+          dataPrimeiraHabilitacaoField.classList.remove("filled-by-ocr");
         }
 
         if (previewContainer) previewContainer.classList.remove("active");
@@ -1200,9 +1311,45 @@
         showScreen("screen2");
       }
       function goToScreen3() { showScreen("screen3"); }
-      function goToScreen4() { showScreen("screen4"); }
+      function goToScreen4() {
+        atualizarDisponibilidadeCardProcesso();
+        showScreen("screen4");
+      }
       function goToScreen5() { showScreen("screen5"); }
       function goToScreen6() { showScreen("screen6"); consultarMultas(); }
+      function goToScreen7() { showScreen("screen7"); consultarProcessoCNH(); }
+
+      function obterTipoProcessoDisponivel() {
+        const cache = recuperarCertidaoCache();
+        if (!cache) return null;
+
+        if (cache.temCassacao || cache.status === "CASSACAO") return "cassacao";
+        if (cache.temSuspensao || cache.status === "SUSPENSAO") return "suspensao";
+        return null;
+      }
+
+      function atualizarDisponibilidadeCardProcesso() {
+        const card = document.getElementById("service-card-processo");
+        const btn = document.getElementById("btn-service-processo");
+        const tipo = obterTipoProcessoDisponivel();
+
+        if (!card || !btn) return;
+
+        if (tipo) {
+          card.classList.remove("disabled");
+          card.setAttribute("aria-disabled", "false");
+          card.dataset.tipoProcesso = tipo;
+          btn.disabled = false;
+          btn.innerText = tipo === "cassacao" ? "Consultar Cassação" : "Consultar Processo";
+          return;
+        }
+
+        card.classList.add("disabled");
+        card.setAttribute("aria-disabled", "true");
+        card.dataset.tipoProcesso = "";
+        btn.disabled = true;
+        btn.innerText = "Disponível após análise";
+      }
 
       function abrirSeletorArquivo() {
         const fileInput = document.getElementById("fileUpload");
@@ -1295,6 +1442,26 @@
       function sanitizeCNH(value) {
         return onlyDigits(value).slice(0, 11);
       }
+
+      function normalizeDateBR(value) {
+        const texto = String(value || "").trim();
+        if (!texto) return "";
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(texto)) return texto;
+        const digits = onlyDigits(texto);
+        if (digits.length === 8) {
+          return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+        }
+        const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+        return texto;
+      }
+
+      function mascararData(value) {
+        let v = onlyDigits(value).slice(0, 8);
+        if (v.length > 4) return `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}`;
+        if (v.length > 2) return `${v.slice(0, 2)}/${v.slice(2)}`;
+        return v;
+      }
         
       document.getElementById("cpf")?.addEventListener("input", (e) => {
         let v = onlyDigits(e.target.value).slice(0, 11);
@@ -1308,6 +1475,14 @@
 
       document.getElementById("cnh")?.addEventListener("input", (e) => {
         e.target.value = sanitizeCNH(e.target.value);
+      });
+
+      document.getElementById("dataNascimento")?.addEventListener("input", (e) => {
+        e.target.value = mascararData(e.target.value);
+      });
+
+      document.getElementById("dataPrimeiraHabilitacao")?.addEventListener("input", (e) => {
+        e.target.value = mascararData(e.target.value);
       });
 
       function validarCPF(cpf) {
@@ -1423,17 +1598,8 @@
             return;
           }
 
-          if (resp.ok && (data.cpf || data.cnh)) {
-            if (data.cpf) {
-              const cpfField = document.getElementById("cpf");
-              cpfField.value = formatarCPF(data.cpf);
-              cpfField.classList.add("filled-by-ocr");
-            }
-            if (data.cnh) {
-              const cnhField = document.getElementById("cnh");
-              cnhField.value = sanitizeCNH(data.cnh);
-              cnhField.classList.add("filled-by-ocr");
-            }
+          if (resp.ok && (data.cpf || data.cnh || data.dataNascimento || data.dataPrimeiraHabilitacao)) {
+            preencherCamposConsultaComOCR(data);
             updateLoadingMessage("Dados extraídos! Iniciando consulta...");
             handleDataEntry(null);
           } else {
@@ -1452,12 +1618,60 @@
         return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
       }
 
+      function preencherCamposConsultaComOCR(dados = {}) {
+        const cpf = onlyDigits(dados?.cpf || "");
+        const cnh = sanitizeCNH(dados?.cnh || "");
+        const dataNascimento = normalizeDateBR(dados?.dataNascimento || "");
+        const dataPrimeiraHabilitacao = normalizeDateBR(dados?.dataPrimeiraHabilitacao || "");
+
+        if (cpf) {
+          const cpfField = document.getElementById("cpf");
+          if (cpfField) {
+            cpfField.value = formatarCPF(cpf);
+            cpfField.classList.add("filled-by-ocr");
+          }
+        }
+
+        if (cnh) {
+          const cnhField = document.getElementById("cnh");
+          if (cnhField) {
+            cnhField.value = sanitizeCNH(cnh);
+            cnhField.classList.add("filled-by-ocr");
+          }
+        }
+
+        if (dataNascimento) {
+          const dataNascimentoField = document.getElementById("dataNascimento");
+          if (dataNascimentoField) {
+            dataNascimentoField.value = dataNascimento;
+            dataNascimentoField.classList.add("filled-by-ocr");
+          }
+        }
+
+        if (dataPrimeiraHabilitacao) {
+          const dataPrimeiraField = document.getElementById("dataPrimeiraHabilitacao");
+          if (dataPrimeiraField) {
+            dataPrimeiraField.value = dataPrimeiraHabilitacao;
+            dataPrimeiraField.classList.add("filled-by-ocr");
+          }
+        }
+      }
+
       const IDENTIDADE_CONSULTA_KEY = "__ultimaConsultaIdentidade";
 
-      function salvarIdentidadeConsulta(cpf, cnh) {
+      function salvarIdentidadeConsulta(cpf, cnh, extras = {}) {
+        const dataNascimentoValor = normalizeDateBR(
+          extras?.dataNascimento || document.getElementById("dataNascimento")?.value || ""
+        );
+        const dataPrimeiraHabilitacaoValor = normalizeDateBR(
+          extras?.dataPrimeiraHabilitacao || document.getElementById("dataPrimeiraHabilitacao")?.value || ""
+        );
+
         const payload = {
           cpf: onlyDigits(cpf),
           cnh: sanitizeCNH(cnh),
+          dataNascimento: dataNascimentoValor || null,
+          dataPrimeiraHabilitacao: dataPrimeiraHabilitacaoValor || null,
           createdAt: Date.now(),
         };
 
@@ -1465,6 +1679,8 @@
 
         window.__lastConsultaCpf = payload.cpf;
         window.__lastConsultaCnh = payload.cnh;
+        window.__lastConsultaDataNascimento = payload.dataNascimento;
+        window.__lastConsultaDataPrimeiraHabilitacao = payload.dataPrimeiraHabilitacao;
         window.__lastConsultaCreatedAt = payload.createdAt;
 
         try {
@@ -1474,7 +1690,12 @@
 
       function recuperarIdentidadeConsulta() {
         if (window.__lastConsultaCpf && window.__lastConsultaCnh) {
-          return { cpf: window.__lastConsultaCpf, cnh: window.__lastConsultaCnh };
+          return {
+            cpf: window.__lastConsultaCpf,
+            cnh: window.__lastConsultaCnh,
+            dataNascimento: window.__lastConsultaDataNascimento || null,
+            dataPrimeiraHabilitacao: window.__lastConsultaDataPrimeiraHabilitacao || null,
+          };
         }
 
         try {
@@ -1485,8 +1706,15 @@
 
           window.__lastConsultaCpf = onlyDigits(parsed.cpf);
           window.__lastConsultaCnh = sanitizeCNH(parsed.cnh);
+          window.__lastConsultaDataNascimento = normalizeDateBR(parsed.dataNascimento || "") || null;
+          window.__lastConsultaDataPrimeiraHabilitacao = normalizeDateBR(parsed.dataPrimeiraHabilitacao || "") || null;
           window.__lastConsultaCreatedAt = parsed.createdAt || Date.now();
-          return { cpf: window.__lastConsultaCpf, cnh: window.__lastConsultaCnh };
+          return {
+            cpf: window.__lastConsultaCpf,
+            cnh: window.__lastConsultaCnh,
+            dataNascimento: window.__lastConsultaDataNascimento,
+            dataPrimeiraHabilitacao: window.__lastConsultaDataPrimeiraHabilitacao,
+          };
         } catch (err) {
           return null;
         }
@@ -1535,16 +1763,28 @@
       const CERTIDAO_CACHE_TTL_MS = 60 * 60 * 1000;
       const MULTAS_CACHE_KEY = "__ultimaConsultaMultas";
       const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
+      const PROCESSO_CACHE_KEY = "__ultimaConsultaProcesso";
+      const PROCESSO_CACHE_TTL_MS = 60 * 60 * 1000;
 
-      function salvarCertidaoCache(caseId, pdfBase64 = null) {
+      function salvarCertidaoCache(caseId, pdfBase64 = null, extras = {}) {
         const payload = {
           caseId: caseId || null,
           pdfBase64: pdfBase64 || null,
+          status: extras?.status || null,
+          temMultas: Boolean(extras?.temMultas),
+          temSuspensao: Boolean(extras?.temSuspensao),
+          temCassacao: Boolean(extras?.temCassacao),
+          nome: extras?.nome || null,
           createdAt: Date.now(),
         };
 
         window.__lastCaseId = payload.caseId;
         window.__lastCertidaoBase64 = payload.pdfBase64;
+        window.__lastCertidaoStatus = payload.status;
+        window.__lastCertidaoTemMultas = payload.temMultas;
+        window.__lastCertidaoTemSuspensao = payload.temSuspensao;
+        window.__lastCertidaoTemCassacao = payload.temCassacao;
+        window.__lastCertidaoNome = payload.nome;
         window.__lastCertidaoCreatedAt = payload.createdAt;
 
         try {
@@ -1558,6 +1798,11 @@
         const emMemoria = {
           caseId: window.__lastCaseId || null,
           pdfBase64: window.__lastCertidaoBase64 || null,
+          status: window.__lastCertidaoStatus || null,
+          temMultas: Boolean(window.__lastCertidaoTemMultas),
+          temSuspensao: Boolean(window.__lastCertidaoTemSuspensao),
+          temCassacao: Boolean(window.__lastCertidaoTemCassacao),
+          nome: window.__lastCertidaoNome || null,
           createdAt: window.__lastCertidaoCreatedAt || null,
         };
 
@@ -1565,6 +1810,11 @@
           if (Date.now() - emMemoria.createdAt <= CERTIDAO_CACHE_TTL_MS) return emMemoria;
           window.__lastCaseId = null;
           window.__lastCertidaoBase64 = null;
+          window.__lastCertidaoStatus = null;
+          window.__lastCertidaoTemMultas = false;
+          window.__lastCertidaoTemSuspensao = false;
+          window.__lastCertidaoTemCassacao = false;
+          window.__lastCertidaoNome = null;
           window.__lastCertidaoCreatedAt = null;
         }
 
@@ -1580,6 +1830,11 @@
 
           window.__lastCaseId = cache.caseId || null;
           window.__lastCertidaoBase64 = cache.pdfBase64 || null;
+          window.__lastCertidaoStatus = cache.status || null;
+          window.__lastCertidaoTemMultas = Boolean(cache.temMultas);
+          window.__lastCertidaoTemSuspensao = Boolean(cache.temSuspensao);
+          window.__lastCertidaoTemCassacao = Boolean(cache.temCassacao);
+          window.__lastCertidaoNome = cache.nome || null;
           window.__lastCertidaoCreatedAt = cache.createdAt || null;
           return cache;
         } catch (err) {
@@ -1672,10 +1927,14 @@
        
         const cpfField = document.getElementById("cpf");
         const cnhField = document.getElementById("cnh");
+        const dataNascimentoField = document.getElementById("dataNascimento");
+        const dataPrimeiraField = document.getElementById("dataPrimeiraHabilitacao");
         const cpf = cpfField.value;
         const cnh = cnhField.value;
         const cpfDigits = onlyDigits(cpf);
         const cnhDigits = sanitizeCNH(cnh);
+        const dataNascimento = normalizeDateBR(dataNascimentoField?.value || "");
+        const dataPrimeiraHabilitacao = normalizeDateBR(dataPrimeiraField?.value || "");
        
         if (!validarCPF(cpf)) { stopSmartLoading(); return alert("CPF inválido!"); }
         if (cnhDigits.length < 9) { stopSmartLoading(); return alert("CNH inválida!"); }
@@ -1696,7 +1955,13 @@
             resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ cpf: cpfDigits, cnh: cnhDigits, origem: origemDados }),
+              body: JSON.stringify({
+                cpf: cpfDigits,
+                cnh: cnhDigits,
+                origem: origemDados,
+                dataNascimento,
+                dataPrimeiraHabilitacao,
+              }),
             });
 
             try {
@@ -1795,8 +2060,18 @@
           const nomeMotorista = data.nome ? `<strong>${data.nome}</strong>` : "Motorista";
 
           // Salva certidão para uso posterior (cache local por 1h)
-          salvarCertidaoCache(data.caseId, data.pdfBase64 || null);
-          salvarIdentidadeConsulta(cpfDigits, cnhDigits);
+          salvarCertidaoCache(data.caseId, data.pdfBase64 || null, {
+            status: data.status,
+            temMultas: data.temMultas,
+            temSuspensao: data.temSuspensao,
+            temCassacao: data.temCassacao,
+            nome: data.nome || null,
+          });
+          salvarIdentidadeConsulta(cpfDigits, cnhDigits, {
+            dataNascimento,
+            dataPrimeiraHabilitacao,
+          });
+          atualizarDisponibilidadeCardProcesso();
         
           // ── CENÁRIO 4: MULTAS + SUSPENSÃO + CASSAÇÃO ──
           if (data.status === "CASSACAO" || data.temCassacao) {
@@ -1999,6 +2274,8 @@
             await processarArquivoOCR(file, "camera");
           });
         }
+
+        atualizarDisponibilidadeCardProcesso();
       });
 
       async function processarArquivoOCR(file, origem = "upload") {
@@ -2019,17 +2296,8 @@
               return;
           }
 
-          if (resp.ok && (data.cpf || data.cnh)) {
-              if (data.cpf) {
-                const cpfField = document.getElementById("cpf");
-                cpfField.value = formatarCPF(data.cpf);
-                cpfField.classList.add("filled-by-ocr");
-              }
-              if (data.cnh) {
-                const cnhField = document.getElementById("cnh");
-                cnhField.value = sanitizeCNH(data.cnh);
-                cnhField.classList.add("filled-by-ocr");
-              }
+          if (resp.ok && (data.cpf || data.cnh || data.dataNascimento || data.dataPrimeiraHabilitacao)) {
+              preencherCamposConsultaComOCR(data);
               updateLoadingMessage("Dados extraídos. Iniciando consulta...");
               handleDataEntry(null);
           } else {
@@ -2050,8 +2318,7 @@
                 const r = await fetch(`${API_URL}/ocr-cnh/status/${jobId}`);
                 const d = await r.json();
                 if (d.status === "done") {
-                    if (d.cpf) document.getElementById("cpf").value = formatarCPF(d.cpf);
-                    if (d.cnh) document.getElementById("cnh").value = sanitizeCNH(d.cnh);
+                    preencherCamposConsultaComOCR(d);
                     updateLoadingMessage("PDF processado. Iniciando consulta...");
                     handleDataEntry(null);
                     return;
@@ -2065,6 +2332,374 @@
         }
         stopSmartLoading();
         alert("O processamento do PDF demorou demais.");
+      }
+
+      function processoConsultaKey(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo = "suspensao") {
+        const cpfDigits = onlyDigits(cpf);
+        const cnhDigits = sanitizeCNH(cnh);
+        const dataNascimentoBr = normalizeDateBR(dataNascimento);
+        const dataPrimeiraBr = normalizeDateBR(dataPrimeiraHabilitacao);
+        const tipoNormalizado = String(tipo || "suspensao").toLowerCase() === "cassacao" ? "cassacao" : "suspensao";
+        if (!cpfDigits || !cnhDigits || !dataNascimentoBr || !dataPrimeiraBr) return null;
+        return `${cpfDigits}:${cnhDigits}:${dataNascimentoBr}:${dataPrimeiraBr}:${tipoNormalizado}`;
+      }
+
+      function salvarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo, data = {}) {
+        const key = processoConsultaKey(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo);
+        if (!key) return;
+
+        const payload = {
+          key,
+          cpf: onlyDigits(cpf),
+          cnh: sanitizeCNH(cnh),
+          dataNascimento: normalizeDateBR(dataNascimento),
+          dataPrimeiraHabilitacao: normalizeDateBR(dataPrimeiraHabilitacao),
+          tipo: String(tipo || "suspensao").toLowerCase() === "cassacao" ? "cassacao" : "suspensao",
+          condutor: data?.condutor && typeof data.condutor === "object" ? data.condutor : null,
+          processos: Array.isArray(data?.processos) ? data.processos : [],
+          mensagem: data?.mensagem || null,
+          createdAt: Number.isFinite(data?.createdAt) ? Number(data.createdAt) : Date.now(),
+        };
+
+        window.__lastProcessoCache = payload;
+        try {
+          localStorage.setItem(PROCESSO_CACHE_KEY, JSON.stringify(payload));
+        } catch (err) {}
+      }
+
+      function recuperarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo) {
+        const key = processoConsultaKey(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo);
+        if (!key) return null;
+
+        const validarCache = (cache) => {
+          if (!cache?.createdAt || Date.now() - cache.createdAt > PROCESSO_CACHE_TTL_MS) return null;
+          const cacheKey = cache.key || processoConsultaKey(cache.cpf, cache.cnh, cache.dataNascimento, cache.dataPrimeiraHabilitacao, cache.tipo);
+          if (!cacheKey || cacheKey !== key) return null;
+          return {
+            condutor: cache?.condutor && typeof cache.condutor === "object" ? cache.condutor : null,
+            processos: Array.isArray(cache?.processos) ? cache.processos : [],
+            mensagem: cache?.mensagem || null,
+            createdAt: cache.createdAt,
+          };
+        };
+
+        const cacheMemoria = validarCache(window.__lastProcessoCache);
+        if (cacheMemoria) return cacheMemoria;
+
+        try {
+          const raw = localStorage.getItem(PROCESSO_CACHE_KEY);
+          if (!raw) return null;
+          const cacheLocal = JSON.parse(raw);
+          const cacheValido = validarCache(cacheLocal);
+          if (!cacheValido) {
+            localStorage.removeItem(PROCESSO_CACHE_KEY);
+            return null;
+          }
+
+          window.__lastProcessoCache = cacheLocal;
+          return cacheValido;
+        } catch (err) {
+          localStorage.removeItem(PROCESSO_CACHE_KEY);
+          return null;
+        }
+      }
+
+      function formatarErroProcesso(data, statusCode) {
+        const msg = String(data?.error || "").trim();
+        const msgNormalizada = msg
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "");
+
+        if (/DETRAN_PROCESSO_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_RESET|net::/i.test(msg)) {
+          return "Portal de acompanhamento do DETRAN-RJ indisponível para consulta automática no momento. Tente novamente em alguns minutos.";
+        }
+
+        if (data?.retryable || statusCode === 503 || /timeout|timed out|2Captcha|captcha|token nao retornado/i.test(msgNormalizada)) {
+          return "Falha temporária na consulta automática de processo. Tente novamente em alguns instantes.";
+        }
+
+        if (/Data de nascimento.*obrigat|Data da 1.*habilitacao.*obrigat/i.test(msgNormalizada)) {
+          return "Informe Data de Nascimento e Data da 1ª Habilitação na tela de consulta para acompanhar o processo.";
+        }
+
+        if (/upstream|is not valid json|unexpected token|bad gateway|gateway|502|503|504/i.test(msgNormalizada)) {
+          return "Falha temporária no servidor ao consultar processo administrativo. Tente novamente em alguns minutos.";
+        }
+
+        if (msg) return msg;
+        return "Erro ao consultar processo administrativo.";
+      }
+
+      async function consultarProcessoCNH(options = {}) {
+        const identidadeConsulta = recuperarIdentidadeConsulta();
+        const certidaoCache = recuperarCertidaoCache();
+        const cpf = identidadeConsulta?.cpf || document.getElementById("cpf")?.value?.replace(/\D/g, "");
+        const cnh = identidadeConsulta?.cnh || document.getElementById("cnh")?.value?.replace(/\D/g, "");
+        const dataNascimento = normalizeDateBR(
+          identidadeConsulta?.dataNascimento || document.getElementById("dataNascimento")?.value || ""
+        );
+        const dataPrimeiraHabilitacao = normalizeDateBR(
+          identidadeConsulta?.dataPrimeiraHabilitacao || document.getElementById("dataPrimeiraHabilitacao")?.value || ""
+        );
+        const tipo = String(
+          options?.tipo ||
+          document.getElementById("service-card-processo")?.dataset?.tipoProcesso ||
+          (certidaoCache?.temCassacao || certidaoCache?.status === "CASSACAO" ? "cassacao" : "suspensao")
+        ).toLowerCase() === "cassacao" ? "cassacao" : "suspensao";
+        const subtitleEl = document.getElementById("processo-subtitle");
+        const loadingEl = document.getElementById("processo-loading");
+        const listaEl = document.getElementById("processo-lista");
+        const refreshBtn = document.getElementById("btn-refresh-processo");
+        const lastUpdateEl = document.getElementById("processo-last-update");
+        const forceRefresh = Boolean(options?.ignorarCache);
+        const tipoLabel = tipo === "cassacao" ? "cassação" : "suspensão";
+
+        const setRefreshState = (loading) => {
+          if (!refreshBtn) return;
+          refreshBtn.disabled = Boolean(loading);
+          refreshBtn.innerText = loading ? "Atualizando..." : "Atualizar dados";
+        };
+
+        const setLastUpdate = (timestampMs) => {
+          if (!lastUpdateEl) return;
+          if (!Number.isFinite(timestampMs)) {
+            lastUpdateEl.innerText = "";
+            return;
+          }
+          const dataHora = new Date(timestampMs);
+          lastUpdateEl.innerText = `Última atualização: ${dataHora.toLocaleTimeString("pt-BR", { hour12: false })}`;
+        };
+
+        const escapeHtml = (valor) =>
+          String(valor ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+
+        const normalizar = (valor) => String(valor ?? "").replace(/\s+/g, " ").trim();
+        const campo = (valor) => {
+          const limpo = normalizar(valor);
+          return limpo && limpo.toLowerCase() !== "null" ? limpo : "-";
+        };
+
+        const statusClasseProcesso = (situacao) => {
+          const s = String(situacao || "").toLowerCase();
+          if (s.includes("cancelad") || s.includes("arquivad")) return "status-cancelada";
+          if (s.includes("deferid") || s.includes("conclu")) return "status-pago";
+          return "status-pendente";
+        };
+
+        const renderTabelaChaveValor = (titulo, dados = []) => {
+          if (!Array.isArray(dados) || !dados.length) return "";
+          let html = "";
+          dados.forEach((objeto) => {
+            const entradas = Object.entries(objeto || {}).filter(([k, v]) => campo(k) !== "-" && campo(v) !== "-");
+            if (!entradas.length) return;
+            const colunas = entradas
+              .map(([chave, valor]) => `<div class="multa-detalhe"><span class="detalhe-label">${escapeHtml(chave)}</span><span class="detalhe-value">${escapeHtml(campo(valor))}</span></div>`)
+              .join("");
+            html += `
+              <div class="processo-subsection">
+                <div class="processo-subtitle">${escapeHtml(titulo)}</div>
+                <div class="multa-detalhes">${colunas}</div>
+              </div>`;
+          });
+          return html;
+        };
+
+        const renderTabelaInfracoes = (infracoes = []) => {
+          if (!Array.isArray(infracoes) || !infracoes.length) return "";
+          const rows = infracoes
+            .map((i) => `
+              <tr>
+                <td>${escapeHtml(campo(i.autoInfracao))}</td>
+                <td>${escapeHtml(campo(i.placa))}</td>
+                <td>${escapeHtml(campo(i.orgao))}</td>
+                <td>${escapeHtml(campo(i.data))}</td>
+                <td>${escapeHtml(campo(i.hora))}</td>
+                <td>${escapeHtml(campo(i.enquadramento))}</td>
+                <td>${escapeHtml(campo(i.descricao))}</td>
+                <td>${escapeHtml(campo(i.pontos))}</td>
+              </tr>`)
+            .join("");
+
+          return `
+            <div class="processo-subsection">
+              <div class="processo-subtitle">Infrações do processo</div>
+              <div class="processo-table-wrap">
+                <table class="processo-table">
+                  <thead>
+                    <tr>
+                      <th>Auto</th>
+                      <th>Placa</th>
+                      <th>Órgão</th>
+                      <th>Data</th>
+                      <th>Hora</th>
+                      <th>Enquadramento</th>
+                      <th>Descrição</th>
+                      <th>Pontos</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+            </div>`;
+        };
+
+        const renderProcessos = (dados = {}) => {
+          const condutor = dados?.condutor && typeof dados.condutor === "object" ? dados.condutor : {};
+          const processos = Array.isArray(dados?.processos) ? dados.processos : [];
+          const mensagem = campo(dados?.mensagem);
+
+          if (!listaEl) return;
+
+          if (!processos.length) {
+            subtitleEl.innerText = `Nenhum processo de ${tipoLabel} encontrado.`;
+            listaEl.innerHTML = `
+              <div class="multas-empty">
+                <div class="multas-empty-icon">✅</div>
+                <div class="multas-empty-title">Sem Processo Ativo</div>
+                <div class="multas-empty-text">${escapeHtml(mensagem !== "-" ? mensagem : "Nenhum processo encontrado para os dados informados.")}</div>
+              </div>`;
+            return;
+          }
+
+          subtitleEl.innerText = `${processos.length} processo(s) de ${tipoLabel} encontrado(s).`;
+
+          let html = `
+            <div class="multa-card">
+              <div class="multa-header">
+                <div class="multa-auto">Dados do Condutor</div>
+                <span class="multa-status status-pendente">${tipo === "cassacao" ? "Cassação" : "Suspensão"}</span>
+              </div>
+              <div class="multa-head-grid">
+                <div class="multa-head-item"><span class="multa-head-label">Nome:</span> ${escapeHtml(campo(condutor?.nome))}</div>
+                <div class="multa-head-item"><span class="multa-head-label">CPF:</span> ${escapeHtml(campo(condutor?.cpf))}</div>
+                <div class="multa-head-item"><span class="multa-head-label">CNH:</span> ${escapeHtml(campo(condutor?.cnh))}</div>
+              </div>
+            </div>`;
+
+          processos.forEach((processo) => {
+            const detalhes = processo?.detalhes && typeof processo.detalhes === "object" ? processo.detalhes : {};
+            const dadosProcesso = detalhes?.dadosProcesso && typeof detalhes.dadosProcesso === "object" ? detalhes.dadosProcesso : {};
+            const situacao = campo(dadosProcesso?.situacaoAtual || processo?.situacaoAtual);
+            const dataProcesso = campo(dadosProcesso?.dataProcesso || processo?.dataProcesso);
+            const prazoSuspensao = campo(dadosProcesso?.prazoSuspensao || processo?.prazoSuspensao);
+            const totalMultas = campo(dadosProcesso?.totalMultas || processo?.totalMultas);
+            const totalPontos = campo(dadosProcesso?.totalPontos || processo?.totalPontos);
+            const numero = campo(dadosProcesso?.numeroProcesso || processo?.numeroProcesso);
+
+            html += `
+              <div class="multa-card">
+                <div class="multa-header">
+                  <div class="multa-auto">Processo: ${escapeHtml(numero)}</div>
+                  <span class="multa-status ${statusClasseProcesso(situacao)}">${escapeHtml(situacao)}</span>
+                </div>
+                <div class="multa-detalhes">
+                  <div class="multa-detalhe"><span class="detalhe-label">Data do Processo</span><span class="detalhe-value">${escapeHtml(dataProcesso)}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Prazo Suspensão</span><span class="detalhe-value">${escapeHtml(prazoSuspensao)}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Total de Multas</span><span class="detalhe-value">${escapeHtml(totalMultas)}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Total de Pontos</span><span class="detalhe-value">${escapeHtml(totalPontos)}</span></div>
+                </div>
+                ${renderTabelaChaveValor("Prazos do Processo", Array.isArray(detalhes?.prazos) ? detalhes.prazos : [])}
+                ${renderTabelaInfracoes(Array.isArray(detalhes?.infracoes) ? detalhes.infracoes : [])}
+                ${renderTabelaChaveValor("Andamentos", Array.isArray(detalhes?.andamentos) ? detalhes.andamentos : [])}
+              </div>`;
+          });
+
+          listaEl.innerHTML = html;
+        };
+
+        if (subtitleEl) subtitleEl.innerText = forceRefresh ? `Atualizando processo de ${tipoLabel}...` : `Consultando processo de ${tipoLabel}...`;
+        if (loadingEl) loadingEl.style.display = "block";
+        if (listaEl) listaEl.innerHTML = "";
+        if (lastUpdateEl && forceRefresh) lastUpdateEl.innerText = "Atualizando dados...";
+        setRefreshState(true);
+
+        if (!cpf || !cnh) {
+          subtitleEl.innerText = "Dados não disponíveis. Volte e faça uma nova consulta.";
+          if (loadingEl) loadingEl.style.display = "none";
+          setLastUpdate(null);
+          setRefreshState(false);
+          return;
+        }
+
+        if (!dataNascimento || !dataPrimeiraHabilitacao) {
+          subtitleEl.innerText = "Informe Data de Nascimento e Data da 1ª Habilitação na tela de consulta para acompanhar o processo.";
+          if (loadingEl) loadingEl.style.display = "none";
+          setLastUpdate(null);
+          setRefreshState(false);
+          return;
+        }
+
+        const cacheLocal = forceRefresh ? null : recuperarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo);
+        if (!forceRefresh && cacheLocal) {
+          if (loadingEl) loadingEl.style.display = "none";
+          renderProcessos(cacheLocal);
+          setLastUpdate(cacheLocal.createdAt);
+          setRefreshState(false);
+          return;
+        }
+
+        try {
+          const resp = await fetch(`${API_URL}/consultar-processo-cnh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cpf,
+              cnh,
+              dataNascimento,
+              dataPrimeiraHabilitacao,
+              tipo,
+              forceRefresh,
+            }),
+          });
+
+          const bodyText = await resp.text();
+          let data;
+          try {
+            data = bodyText ? JSON.parse(bodyText) : {};
+          } catch (e) {
+            data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+          }
+
+          if (loadingEl) loadingEl.style.display = "none";
+
+          if (!data.ok) {
+            subtitleEl.innerText = formatarErroProcesso(data, resp.status);
+            setLastUpdate(null);
+            setRefreshState(false);
+            return;
+          }
+
+          const momentoAtualizacao = Date.now();
+          const resultado = {
+            condutor: data?.condutor || null,
+            processos: Array.isArray(data?.processos) ? data.processos : [],
+            mensagem: data?.mensagem || null,
+          };
+
+          salvarProcessoCache(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo, {
+            ...resultado,
+            createdAt: momentoAtualizacao,
+          });
+
+          renderProcessos(resultado);
+          setLastUpdate(momentoAtualizacao);
+        } catch (err) {
+          if (loadingEl) loadingEl.style.display = "none";
+          subtitleEl.innerText = "Erro: " + err.message;
+          setLastUpdate(null);
+        } finally {
+          setRefreshState(false);
+        }
+      }
+
+      function atualizarProcesso(event) {
+        if (event?.stopPropagation) event.stopPropagation();
+        consultarProcessoCNH({ ignorarCache: true });
       }
 
       // ==========================================
@@ -2429,6 +3064,18 @@
 
         if (s === "certidao") return abrirCertidao();
         if (s === "multas") return goToScreen6();
+        if (s === "suspensao") {
+          const card = document.getElementById("service-card-processo");
+          const tipoDisponivel = card?.dataset?.tipoProcesso || obterTipoProcessoDisponivel();
+
+          if (!tipoDisponivel || card?.classList.contains("disabled")) {
+            alert("Este serviço só fica disponível quando a certidão indicar processo de suspensão ou cassação.");
+            return;
+          }
+
+          if (card) card.dataset.tipoProcesso = tipoDisponivel;
+          return goToScreen7();
+        }
 
         alert("Serviço selecionado: " + s);
       }

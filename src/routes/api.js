@@ -12,6 +12,7 @@ import OCRExtractor from "../ocrExtractor.mjs";
 import { get2CaptchaBalance } from "../services/twocaptcha.js";
 import { emitirCertidaoPDF } from "../services/certidao_v3.js";
 import PontuacaoAutomation from "../pontuacaoAutomation.mjs";
+import ProcessoSuspCassAutomation from "../processoSuspCassAutomation.mjs";
 
 // Sistema de Leads
 import {
@@ -58,6 +59,9 @@ const DEFAULT_OCR_BUCKET = "detran-descomplica-ocr";
 const multasCacheStore = new Map();
 const multasInFlight = new Map();
 const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
+const processoCacheStore = new Map();
+const processoInFlight = new Map();
+const PROCESSO_CACHE_TTL_MS = 60 * 60 * 1000;
 const certidaoStore = new Map();
 const certidaoConsultaCache = new Map();
 const CERTIDAO_TTL_MS = 60 * 60 * 1000;
@@ -87,12 +91,32 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function normalizeDateBR(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(text)) return text;
+
+  const digits = onlyDigits(text);
+  if (digits.length === 8) {
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  }
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  return text;
+}
+
 function certidaoConsultaKey(cpf, cnh) {
   return `${onlyDigits(cpf)}:${onlyDigits(cnh)}`;
 }
 
 function multasCacheKey(cpf, cnh) {
   return `${onlyDigits(cpf)}:${onlyDigits(cnh)}`;
+}
+
+function processoCacheKey(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo = "suspensao") {
+  const tipoNormalizado = String(tipo || "suspensao").toLowerCase() === "cassacao" ? "cassacao" : "suspensao";
+  return `${onlyDigits(cpf)}:${onlyDigits(cnh)}:${normalizeDateBR(dataNascimento)}:${normalizeDateBR(dataPrimeiraHabilitacao)}:${tipoNormalizado}`;
 }
 
 function cleanupMultasCache() {
@@ -201,6 +225,146 @@ async function consultarMultasComCache(cpfDigits, cnhDigits, apiKey, options = {
   return promise;
 }
 
+function cleanupProcessoCache() {
+  const now = Date.now();
+  for (const [key, item] of processoCacheStore.entries()) {
+    if (!item?.updatedAt || now - item.updatedAt > PROCESSO_CACHE_TTL_MS) {
+      processoCacheStore.delete(key);
+    }
+  }
+}
+
+function getCachedProcesso(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo) {
+  cleanupProcessoCache();
+  const key = processoCacheKey(cpf, cnh, dataNascimento, dataPrimeiraHabilitacao, tipo);
+  const item = processoCacheStore.get(key);
+  if (!item || item.status !== "done" || !item.data) return null;
+  return item.data;
+}
+
+function isErroProcessoRetryable(mensagem = "") {
+  const normalizada = String(mensagem || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return /DETRAN_PROCESSO_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|2Captcha|timeout|timed out|page\.goto|is interrupted by another navigation|Navigation to|Target closed|Execution context was destroyed|Protocol error|net::|captcha|token nao retornado|recaptcha/i.test(normalizada);
+}
+
+async function executarConsultaProcessoComRetry(
+  cpfDigits,
+  cnhDigits,
+  dataNascimento,
+  dataPrimeiraHabilitacao,
+  tipo,
+  apiKey
+) {
+  let resultado = null;
+  let ultimoErro = null;
+  const maxTentativas = 2;
+
+  for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+    try {
+      const automation = new ProcessoSuspCassAutomation(apiKey);
+      resultado = await automation.consultarProcesso(
+        cpfDigits,
+        cnhDigits,
+        dataNascimento,
+        dataPrimeiraHabilitacao,
+        tipo
+      );
+      if (!resultado?.sucesso) throw new Error(resultado?.erro || "Falha ao consultar processo administrativo.");
+      break;
+    } catch (err) {
+      ultimoErro = err;
+      const mensagemErro = err?.message || String(err);
+      const retryable = isErroProcessoRetryable(mensagemErro);
+
+      console.warn(
+        `[PROCESSO] Falha na consulta (${tipo}) tentativa ${tentativa}/${maxTentativas}: ${mensagemErro}`
+      );
+
+      if (!retryable || tentativa === maxTentativas) {
+        throw err;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500 * tentativa));
+    }
+  }
+
+  if (!resultado?.sucesso) throw ultimoErro || new Error("Falha ao consultar processo administrativo.");
+  return resultado;
+}
+
+async function consultarProcessoComCache(
+  cpfDigits,
+  cnhDigits,
+  dataNascimento,
+  dataPrimeiraHabilitacao,
+  tipo,
+  apiKey,
+  options = {}
+) {
+  const { forceRefresh = false } = options;
+  const key = processoCacheKey(cpfDigits, cnhDigits, dataNascimento, dataPrimeiraHabilitacao, tipo);
+
+  if (forceRefresh) {
+    processoCacheStore.delete(key);
+  } else {
+    const cacheValido = getCachedProcesso(
+      cpfDigits,
+      cnhDigits,
+      dataNascimento,
+      dataPrimeiraHabilitacao,
+      tipo
+    );
+    if (cacheValido) return { ...cacheValido, fromCache: true };
+  }
+
+  if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
+
+  if (processoInFlight.has(key)) {
+    return processoInFlight.get(key);
+  }
+
+  processoCacheStore.set(key, {
+    status: "processing",
+    updatedAt: Date.now(),
+    error: null,
+  });
+
+  const promise = (async () => {
+    try {
+      const data = await executarConsultaProcessoComRetry(
+        cpfDigits,
+        cnhDigits,
+        dataNascimento,
+        dataPrimeiraHabilitacao,
+        tipo,
+        apiKey
+      );
+      processoCacheStore.set(key, {
+        status: "done",
+        updatedAt: Date.now(),
+        data,
+        error: null,
+      });
+      return { ...data, fromCache: false };
+    } catch (err) {
+      processoCacheStore.set(key, {
+        status: "error",
+        updatedAt: Date.now(),
+        error: err?.message || String(err),
+      });
+      throw err;
+    } finally {
+      processoInFlight.delete(key);
+    }
+  })();
+
+  processoInFlight.set(key, promise);
+  return promise;
+}
+
 function extrairCpfCnhDoTexto(texto = "") {
   const textoSeguro = String(texto || "");
 
@@ -221,7 +385,26 @@ function extrairCpfCnhDoTexto(texto = "") {
     }
   }
 
-  return { cpf, cnh: cnh || null };
+  const extrairDataPorRotulo = (rotuloRegex) => {
+    const linha = textoSeguro.match(new RegExp(`${rotuloRegex.source}[^\\n\\r\\d]{0,25}(\\d{2}[\\/\\-.]\\d{2}[\\/\\-.]\\d{4})`, "i"));
+    if (linha?.[1]) return normalizeDateBR(linha[1].replace(/[.-]/g, "/"));
+    return null;
+  };
+
+  const dataNascimento =
+    extrairDataPorRotulo(/DATA\\s+NASC(?:IMENTO)?/) ||
+    extrairDataPorRotulo(/NASCIMENTO/);
+
+  const dataPrimeiraHabilitacao =
+    extrairDataPorRotulo(/1\\s*[ªA]?\\s*HABILITA/) ||
+    extrairDataPorRotulo(/PRIMEIRA\\s+HABILITA/);
+
+  return {
+    cpf,
+    cnh: cnh || null,
+    dataNascimento: dataNascimento || null,
+    dataPrimeiraHabilitacao: dataPrimeiraHabilitacao || null,
+  };
 }
 
 // =========================
@@ -335,6 +518,8 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     const cpf = onlyDigits(result.dados?.cpf);
     const cnh = onlyDigits(result.dados?.cnh);
     const nome = result.dados?.nome || null;
+    const dataNascimento = normalizeDateBR(result.dados?.dataNascimento || "");
+    const dataPrimeiraHabilitacao = normalizeDateBR(result.dados?.dataPrimeiraHabilitacao || "");
 
     // REGISTRAR LEAD (dados do OCR)
     if (cpf) {
@@ -347,7 +532,13 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       });
     }
 
-    return res.json({ cpf: cpf || null, cnh: cnh || null, nome });
+    return res.json({
+      cpf: cpf || null,
+      cnh: cnh || null,
+      nome,
+      dataNascimento: dataNascimento || null,
+      dataPrimeiraHabilitacao: dataPrimeiraHabilitacao || null,
+    });
 
   } catch (err) {
     console.error("Erro /api/ocr-cnh:", err);
@@ -379,10 +570,10 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     const parsed = JSON.parse(buf.toString("utf8"));
     const text = parsed?.responses?.[0]?.fullTextAnnotation?.text || "";
 
-    const { cpf, cnh } = extrairCpfCnhDoTexto(text);
+    const { cpf, cnh, dataNascimento, dataPrimeiraHabilitacao } = extrairCpfCnhDoTexto(text);
 
     job.status = "done";
-    job.result = { cpf, cnh };
+    job.result = { cpf, cnh, dataNascimento, dataPrimeiraHabilitacao };
 
     // REGISTRAR LEAD (dados do OCR PDF)
     if (cpf) {
@@ -394,7 +585,7 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
       });
     }
 
-    return res.json({ status: "done", cpf, cnh });
+    return res.json({ status: "done", cpf, cnh, dataNascimento, dataPrimeiraHabilitacao });
 
   } catch (err) {
     return res.status(500).json({ status: "error", error: err.message });
@@ -428,9 +619,11 @@ function isErroCertidaoRetryable(mensagem = "") {
 router.post("/consultar-certidao", async (req, res) => {
   try {
     cleanupCertidoes();
-    const { cpf, cnh, origem } = req.body || {};
+    const { cpf, cnh, origem, dataNascimento, dataPrimeiraHabilitacao } = req.body || {};
     const cpfDigits = onlyDigits(cpf);
     const cnhDigits = onlyDigits(cnh);
+    const dataNascimentoBr = normalizeDateBR(dataNascimento);
+    const dataPrimeiraHabilitacaoBr = normalizeDateBR(dataPrimeiraHabilitacao);
     const consultaKey = certidaoConsultaKey(cpfDigits, cnhDigits);
 
     if (!cpfDigits || !cnhDigits) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
@@ -518,6 +711,31 @@ router.post("/consultar-certidao", async (req, res) => {
         })
         .catch((err) => {
           console.warn(`[MULTAS] Prefetch falhou para ${cpfDigits}: ${err?.message || err}`);
+        });
+    }
+
+    if (
+      (analise.temSuspensao || analise.temCassacao) &&
+      dataNascimentoBr &&
+      dataPrimeiraHabilitacaoBr &&
+      process.env.TWOCAPTCHA_API_KEY
+    ) {
+      const tipoProcessoPrefetch = analise.temCassacao ? "cassacao" : "suspensao";
+      consultarProcessoComCache(
+        cpfDigits,
+        cnhDigits,
+        dataNascimentoBr,
+        dataPrimeiraHabilitacaoBr,
+        tipoProcessoPrefetch,
+        process.env.TWOCAPTCHA_API_KEY
+      )
+        .then(() => {
+          console.log(`[PROCESSO] Prefetch concluído para ${cpfDigits} (${tipoProcessoPrefetch}).`);
+        })
+        .catch((err) => {
+          console.warn(
+            `[PROCESSO] Prefetch falhou para ${cpfDigits} (${tipoProcessoPrefetch}): ${err?.message || err}`
+          );
         });
     }
 
@@ -628,6 +846,91 @@ router.post("/consultar-multas", async (req, res) => {
       : /captcha|token nao retornado/i.test(mensagemNormalizada)
       ? "Falha temporária na validação automática do CAPTCHA. Tente novamente em alguns instantes."
       : mensagem;
+    return res.status(indisponivel ? 503 : 400).json({
+      ok: false,
+      error: mensagemPublica,
+      retryable: indisponivel,
+    });
+  }
+});
+
+// =========================
+// ROTA: Consultar Processo Suspensão/Cassação
+// =========================
+router.post("/consultar-processo-cnh", async (req, res) => {
+  try {
+    const {
+      cpf,
+      cnh,
+      dataNascimento,
+      dataPrimeiraHabilitacao,
+      tipo = "suspensao",
+      forceRefresh,
+    } = req.body || {};
+
+    const cpfDigits = onlyDigits(cpf);
+    const cnhDigits = onlyDigits(cnh);
+    const dataNascimentoBr = normalizeDateBR(dataNascimento);
+    const dataPrimeiraHabilitacaoBr = normalizeDateBR(dataPrimeiraHabilitacao);
+    const tipoNormalizado = String(tipo || "suspensao").toLowerCase() === "cassacao" ? "cassacao" : "suspensao";
+    const apiKey = process.env.TWOCAPTCHA_API_KEY;
+
+    if (!cpfDigits || !cnhDigits) {
+      return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
+    }
+    if (cpfDigits.length !== 11) {
+      return res.status(400).json({ ok: false, error: "CPF inválido." });
+    }
+    if (cnhDigits.length < 9 || cnhDigits.length > 11) {
+      return res.status(400).json({ ok: false, error: "CNH inválida." });
+    }
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataNascimentoBr)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Data de nascimento é obrigatória no formato DD/MM/AAAA.",
+      });
+    }
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataPrimeiraHabilitacaoBr)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Data da 1ª habilitação é obrigatória no formato DD/MM/AAAA.",
+      });
+    }
+
+    const resultado = await consultarProcessoComCache(
+      cpfDigits,
+      cnhDigits,
+      dataNascimentoBr,
+      dataPrimeiraHabilitacaoBr,
+      tipoNormalizado,
+      apiKey,
+      { forceRefresh: Boolean(forceRefresh) }
+    );
+
+    return res.json({
+      ok: true,
+      tipo: tipoNormalizado,
+      condutor: resultado.condutor || null,
+      processos: Array.isArray(resultado.processos) ? resultado.processos : [],
+      mensagem: resultado.mensagem || null,
+      cache: resultado.fromCache ? "hit" : "miss",
+    });
+  } catch (err) {
+    console.error("Erro processo suspensão/cassação:", err);
+    const mensagem = err?.message || "Erro ao consultar processo administrativo.";
+    const indisponivel = isErroProcessoRetryable(mensagem);
+    const mensagemPublica = /DETRAN_PROCESSO_OFFLINE|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED/i.test(
+      mensagem
+    )
+      ? "Portal de acompanhamento de processo do DETRAN-RJ indisponível para consulta automática no momento. Tente novamente em alguns minutos."
+      : /captcha|token nao retornado/i.test(
+          String(mensagem)
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+        )
+      ? "Falha temporária na validação automática do CAPTCHA. Tente novamente em alguns instantes."
+      : mensagem;
+
     return res.status(indisponivel ? 503 : 400).json({
       ok: false,
       error: mensagemPublica,
