@@ -920,7 +920,7 @@
             </div>
 
             <div class="main-choices">
-                <div class="choice-card" onclick="goToScreen2()">
+                <div class="choice-card" onclick="goToScreen2(true)">
                     <div class="choice-icon">🎯</div>
                     <h2 class="choice-title">Analisar Minha CNH</h2>
                     <p class="choice-description">
@@ -1190,7 +1190,10 @@
         origemDados = "manual";
       }
         
-      function goToScreen1() { showScreen("screen1"); }
+      function goToScreen1(clearForm = true) {
+        if (clearForm) limparDadosConsulta();
+        showScreen("screen1");
+      }
       function goToScreen2(clearForm = false) {
         if (clearForm) limparDadosConsulta();
         showScreen("screen2");
