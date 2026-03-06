@@ -2115,6 +2115,7 @@
           if (bruto === "-") return "-";
           const chave = bruto.toUpperCase().replace(/\s+/g, "");
           if (chave === "PMRJ") return "PMRJ - Prefeitura do Rio de Janeiro";
+          if (chave === "PMME") return "PMME - Prefeitura de Macaé";
           if (chave === "PMERJ") return "PMERJ - Polícia Militar (DETRAN.RJ)";
           if (chave === "DER") return "DER - Departamento de Estrada e Rodagem";
           return bruto;
