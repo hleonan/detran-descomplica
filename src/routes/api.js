@@ -58,6 +58,9 @@ const DEFAULT_OCR_BUCKET = "detran-descomplica-ocr";
 const multasCacheStore = new Map();
 const multasInFlight = new Map();
 const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
+const certidaoStore = new Map();
+const certidaoConsultaCache = new Map();
+const CERTIDAO_TTL_MS = 60 * 60 * 1000;
 
 function cleanupOCRJobs() {
   const now = Date.now();
@@ -82,6 +85,10 @@ function getOcrBucketName() {
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function certidaoConsultaKey(cpf, cnh) {
+  return `${onlyDigits(cpf)}:${onlyDigits(cnh)}`;
 }
 
 function multasCacheKey(cpf, cnh) {
@@ -394,16 +401,16 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
   }
 });
 
-// =========================
-// ROTA: Consultar Certidão (Detran)
-// =========================
-const certidaoStore = new Map();
-const CERTIDAO_TTL_MS = 60 * 60 * 1000;
-
 function cleanupCertidoes() {
   const now = Date.now();
   for (const [id, item] of certidaoStore.entries()) {
     if (now - item.createdAt > CERTIDAO_TTL_MS) certidaoStore.delete(id);
+  }
+
+  for (const [key, item] of certidaoConsultaCache.entries()) {
+    const expirado = !item?.createdAt || now - item.createdAt > CERTIDAO_TTL_MS;
+    const caseIdInvalido = !item?.caseId || !certidaoStore.has(item.caseId);
+    if (expirado || caseIdInvalido) certidaoConsultaCache.delete(key);
   }
 }
 
@@ -424,6 +431,7 @@ router.post("/consultar-certidao", async (req, res) => {
     const { cpf, cnh, origem } = req.body || {};
     const cpfDigits = onlyDigits(cpf);
     const cnhDigits = onlyDigits(cnh);
+    const consultaKey = certidaoConsultaKey(cpfDigits, cnhDigits);
 
     if (!cpfDigits || !cnhDigits) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
     if (cpfDigits.length !== 11) return res.status(400).json({ ok: false, error: "CPF inválido." });
@@ -436,6 +444,21 @@ router.post("/consultar-certidao", async (req, res) => {
       origem: origem || "manual",
       status: "DESCONHECIDO",
     });
+
+    const cacheConsulta = certidaoConsultaCache.get(consultaKey);
+    if (cacheConsulta) {
+      const cachePdf = certidaoStore.get(cacheConsulta.caseId);
+      if (cachePdf && Date.now() - cachePdf.createdAt <= CERTIDAO_TTL_MS) {
+        console.log(`[DETRAN] Cache hit para ${cpfDigits}.`);
+        return res.json({
+          ...cacheConsulta.payload,
+          caseId: cacheConsulta.caseId,
+          pdfBase64: cachePdf.pdfBuffer.toString("base64"),
+          cache: "hit",
+        });
+      }
+      certidaoConsultaCache.delete(consultaKey);
+    }
 
     // Chama a automação do Playwright com retry para instabilidades transitórias.
     let resultado;
@@ -498,10 +521,8 @@ router.post("/consultar-certidao", async (req, res) => {
         });
     }
 
-    return res.json({
+    const payload = {
       ok: true,
-      caseId,
-      pdfBase64: pdfBuffer.toString("base64"),
       temProblemas: analise.temProblemas,
       temMultas: analise.temMultas || false,
       temSuspensao: analise.temSuspensao || false,
@@ -510,6 +531,19 @@ router.post("/consultar-certidao", async (req, res) => {
       status: analise.status,
       nome: analise.nome || null,
       numeroCertidao: analise.numeroCertidao || null,
+    };
+
+    certidaoConsultaCache.set(consultaKey, {
+      createdAt: Date.now(),
+      caseId,
+      payload,
+    });
+
+    return res.json({
+      ...payload,
+      caseId,
+      pdfBase64: pdfBuffer.toString("base64"),
+      cache: "miss",
     });
 
   } catch (err) {

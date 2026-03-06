@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import TwoCaptcha from './services/TwoCaptchaClass.js';
+import { obterInfracaoCTB } from './data/ctbInfracoes.mjs';
 
 /**
  * Automação para consultar pontuação/multas no DETRAN-RJ
@@ -751,7 +752,50 @@ class PontuacaoAutomation {
         })
       : [];
 
-    return multasValidas;
+    const normalizarSemAcento = (valor = '') =>
+      String(valor || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+
+    const multasComFallback = multasValidas.map((multa) => {
+      const situacaoNormalizada = normalizarSemAcento(`${multa?.statusAtual || ''} ${multa?.situacao || ''}`);
+      const emAutuacao = situacaoNormalizada.includes('AUTUACAO');
+      const valorAtual = String(multa?.valor || '').trim();
+
+      if (!emAutuacao || (valorAtual && valorAtual !== '-')) {
+        return multa;
+      }
+
+      const codigoInfracao = String(multa?.infracao || '').match(/^(\d{5})\b/)?.[1] || '';
+      const referenciaCTB = obterInfracaoCTB(codigoInfracao);
+      const valorPorCodigo = referenciaCTB?.valor && referenciaCTB.valor !== '-' ? referenciaCTB.valor : null;
+      const enquadramento = normalizarSemAcento(multa?.enquadramento || '');
+      const valorPorGravidade = enquadramento.includes('GRAVISSIMA')
+        ? '293,47'
+        : enquadramento.includes('GRAVE')
+        ? '195,23'
+        : enquadramento.includes('MEDIA')
+        ? '130,16'
+        : enquadramento.includes('LEVE')
+        ? '88,38'
+        : null;
+      const valorFallback = valorPorCodigo || valorPorGravidade;
+      if (!valorFallback) return multa;
+
+      const pontosAtuais = String(multa?.pontos || '').trim();
+      const pontos = (!pontosAtuais || pontosAtuais === '-') && referenciaCTB.pontos && referenciaCTB.pontos !== '-'
+        ? referenciaCTB.pontos
+        : multa.pontos;
+
+      return {
+        ...multa,
+        valor: valorFallback,
+        pontos,
+      };
+    });
+
+    return multasComFallback;
   }
 
   async expandirDetalhesPorNumeroAuto(page) {

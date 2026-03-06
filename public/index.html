@@ -1027,6 +1027,10 @@
                 <div class="section-header">
                     <h2 class="section-title">Escolha o Serviço</h2>
                     <p class="section-subtitle">Selecione o que deseja fazer com sua CNH</p>
+                    <div class="section-actions">
+                        <button type="button" class="btn-refresh" onclick="goToScreen2(true)">Nova consulta</button>
+                        <button type="button" class="btn-refresh" onclick="goToScreen1()">Página inicial</button>
+                    </div>
                 </div>
 
                 <div class="services-grid">
@@ -2112,6 +2116,7 @@
           const chave = bruto.toUpperCase().replace(/\s+/g, "");
           if (chave === "PMRJ") return "PMRJ - Prefeitura do Rio de Janeiro";
           if (chave === "PMERJ") return "PMERJ - Polícia Militar (DETRAN.RJ)";
+          if (chave === "DER") return "DER - Departamento de Estrada e Rodagem";
           return bruto;
         };
 
@@ -2210,7 +2215,7 @@
 
         const possuiCamposFinanceiros = (multas) =>
           Array.isArray(multas) &&
-          multas.some((m) => valorExibicao(m) !== "-" || vencimentoExibicao(m) !== "-");
+          multas.some((m) => campo(m?.valor) !== "-" || campo(m?.vencimento) !== "-");
 
         const classeStatus = (status) => {
           const s = String(status || "").toLowerCase();
