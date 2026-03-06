@@ -533,11 +533,16 @@ router.post("/consultar-certidao", async (req, res) => {
       numeroCertidao: analise.numeroCertidao || null,
     };
 
-    certidaoConsultaCache.set(consultaKey, {
-      createdAt: Date.now(),
-      caseId,
-      payload,
-    });
+    const statusCacheavel = ["OK", "MULTAS", "SUSPENSAO", "CASSACAO"].includes(payload.status);
+    if (statusCacheavel) {
+      certidaoConsultaCache.set(consultaKey, {
+        createdAt: Date.now(),
+        caseId,
+        payload,
+      });
+    } else {
+      certidaoConsultaCache.delete(consultaKey);
+    }
 
     return res.json({
       ...payload,

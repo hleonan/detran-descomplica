@@ -1888,7 +1888,7 @@
             btnSecondary.onclick = null;
 
           // ── CENÁRIO 5: NADA CONSTA ──
-          } else {
+          } else if (data.status === "OK") {
             icon.innerText = "✅";
             title.innerText = "PARABÉNS! SUA CNH ESTÁ LIMPA";
             title.style.color = "#28A745";
@@ -1919,6 +1919,43 @@
             btnSecondary.innerText = "CONSULTAR OUTROS SERVIÇOS";
             btnSecondary.style.background = "#003D7A";
             btnSecondary.onclick = () => goToScreen5();
+          } else {
+            // ── CENÁRIO 6: DESCONHECIDO/INCONCLUSIVO (evita falso positivo) ──
+            const motivoInconclusivo = String(
+              data?.motivo || "Pode ser instabilidade momentânea no portal oficial."
+            ).replace(/[&<>"']/g, (ch) => ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#039;",
+            }[ch]));
+
+            icon.innerText = "😓";
+            title.innerText = "Não foi possível validar automaticamente";
+            title.style.color = "#d32f2f";
+
+            msg.innerHTML = `
+              <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 5px solid #ffc107; text-align: left;">
+                <p style="color: #333; font-weight: bold;">O DETRAN não retornou um resultado conclusivo nesta tentativa.</p>
+                <p style="font-size: 0.9em; margin-top: 5px;">
+                  ${motivoInconclusivo}
+                </p>
+              </div>
+              <p style="margin-top: 15px; font-weight: bold;">Tente novamente ou fale com nosso suporte.</p>
+            `;
+
+            btnAction.innerText = "TENTAR NOVAMENTE";
+            btnAction.style.background = "#003D7A";
+            btnAction.onclick = () => goToScreen2(true);
+
+            btnSecondary.style.display = "block";
+            btnSecondary.innerText = "FALAR COM SUPORTE NO WHATSAPP";
+            btnSecondary.style.background = "#25D366";
+            btnSecondary.onclick = () => {
+              const textoZap = encodeURIComponent(`Olá, minha consulta de certidão ficou inconclusiva para CPF: ${cpfDigits}. Podem me ajudar?`);
+              window.open(`https://wa.me/5521999999999?text=${textoZap}`, "_blank");
+            };
           }
 
           origemDados = "manual";

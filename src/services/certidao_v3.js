@@ -25,6 +25,10 @@ const FRASES_ERRO = [
   "DADOS INFORMADOS INVALIDOS",
   "DADOS INFORMADOS NAO CONFEREM",
   "NAO CONFEREM",
+  "CNH NAO CADASTRADA",
+  "CPF NAO CADASTRADO",
+  "CNH NAO ENCONTRADA",
+  "CPF NAO ENCONTRADO",
   "CAPTCHA INCORRETO",
   "ERRO NA CONSULTA",
   "CODIGO DE VERIFICACAO INCORRETO",
@@ -519,14 +523,32 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     console.log("[DETRAN] Validando resultado da consulta (Pagina 1)...");
     const textoPagina1 = await extrairTextoDaPagina(page);
     const textoUpperP1 = textoPagina1.toUpperCase();
+    const textoNormP1 = normalizarTextoAnalise(textoPagina1);
 
     console.log(`[DETRAN] Texto P1 (200 chars): ${textoPagina1.substring(0, 200)}...`);
 
     // Verifica ERRO
-    const erroEncontrado = FRASES_ERRO.find((frase) => textoUpperP1.includes(frase));
+    const erroEncontrado = FRASES_ERRO.find((frase) =>
+      textoNormP1.includes(normalizarTextoAnalise(frase))
+    );
     if (erroEncontrado) {
       console.error(`[DETRAN] ERRO NA TELA: "${erroEncontrado}"`);
       throw new Error("DETRAN_FAIL: O site do DETRAN recusou os dados informados. Verifique CPF e CNH.");
+    }
+
+    // Alguns cenarios retornam para o proprio formulario (sem certidao concluida), gerando falso positivo.
+    // Quando isso acontecer, tratamos como falha temporaria para nova tentativa/retorno ao usuario.
+    const permaneceuNoFormulario = await page.evaluate(() => {
+      const temCpf = Boolean(document.querySelector("#CertidaoCpf, input[name='CertidaoCpf'], input[name='cpf']"));
+      const temCnh = Boolean(document.querySelector("#CertidaoCnh, input[name='CertidaoCnh'], input[name='cnh']"));
+      const temBotaoConsultar = Boolean(document.querySelector("#btPesquisar, button#btPesquisar, input#btPesquisar, button[type='submit'], input[type='submit']"));
+      const temRecaptcha = Boolean(document.querySelector("iframe[src*='recaptcha'], .g-recaptcha, textarea[name='g-recaptcha-response'], #g-recaptcha-response"));
+      return temCpf && temCnh && temBotaoConsultar && temRecaptcha;
+    });
+
+    if (permaneceuNoFormulario) {
+      console.warn("[DETRAN] Consulta retornou para a tela inicial/formulario. Evitando classificacao como OK.");
+      throw new Error("DETRAN_RETRYABLE: O DETRAN nao retornou a certidao nesta tentativa (retorno ao formulario).");
     }
 
     // Verifica se tem conteudo minimo valido
