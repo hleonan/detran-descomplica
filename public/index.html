@@ -267,6 +267,34 @@
             line-height: 1.6;
         }
 
+        .section-actions {
+            margin-top: 14px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-refresh {
+            border: 1px solid #005FA3;
+            background: #ffffff;
+            color: #005FA3;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-refresh:hover {
+            background: #e8f4ff;
+        }
+
+        .btn-refresh:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
         .form-group {
             margin-bottom: 25px;
         }
@@ -856,6 +884,8 @@
             .input-methods { grid-template-columns: 1fr; }
             .upload-area, .camera-area { padding: 25px 15px; }
             .camera-preview { max-height: 50vh; }
+            .section-actions { justify-content: stretch; }
+            .btn-refresh { width: 100%; }
         }
     </style>
 </head>
@@ -1027,6 +1057,9 @@
                 <div class="section-header">
                     <h2 class="section-title">Suas Multas de Trânsito</h2>
                     <p class="section-subtitle" id="multas-subtitle">Carregando detalhamento...</p>
+                    <div class="section-actions">
+                        <button id="btn-refresh-multas" class="btn-refresh" onclick="atualizarMultas(event)">Atualizar dados</button>
+                    </div>
                 </div>
                 <div id="multas-lista" class="multas-lista"></div>
                 <div id="multas-loading" class="loading-spinner">
@@ -2012,17 +2045,26 @@
         return "Erro ao consultar multas.";
       }
 
-      async function consultarMultas() {
+      async function consultarMultas(options = {}) {
         const identidadeConsulta = recuperarIdentidadeConsulta();
         const cpf = identidadeConsulta?.cpf || document.getElementById("cpf")?.value?.replace(/\D/g, "");
         const cnh = identidadeConsulta?.cnh || document.getElementById("cnh")?.value?.replace(/\D/g, "");
         const subtitleEl = document.getElementById("multas-subtitle");
         const loadingEl = document.getElementById("multas-loading");
         const listaEl = document.getElementById("multas-lista");
+        const refreshBtn = document.getElementById("btn-refresh-multas");
+        let forceRefresh = Boolean(options?.ignorarCache);
 
-        if (subtitleEl) subtitleEl.innerText = "Consultando multas...";
+        const setRefreshState = (loading) => {
+          if (!refreshBtn) return;
+          refreshBtn.disabled = Boolean(loading);
+          refreshBtn.innerText = loading ? "Atualizando..." : "Atualizar dados";
+        };
+
+        if (subtitleEl) subtitleEl.innerText = forceRefresh ? "Atualizando dados de multas..." : "Consultando multas...";
         if (loadingEl) loadingEl.style.display = "block";
         if (listaEl) listaEl.innerHTML = "";
+        setRefreshState(true);
 
         const escapeHtml = (valor) => String(valor ?? "")
           .replace(/&/g, "&amp;")
@@ -2085,6 +2127,10 @@
           if (/cancelad/i.test(situacao)) return "Cancelada";
           return "Pendente";
         };
+
+        const possuiCamposFinanceiros = (multas) =>
+          Array.isArray(multas) &&
+          multas.some((m) => campo(m?.valor) !== "-" || campo(m?.vencimento) !== "-" || campo(m?.valorComDesconto) !== "-");
 
         const classeStatus = (status) => {
           const s = String(status || "").toLowerCase();
@@ -2153,39 +2199,53 @@
         if (!cpf || !cnh) {
           document.getElementById("multas-subtitle").innerText = "Dados não disponíveis. Volte e faça a consulta primeiro.";
           document.getElementById("multas-loading").style.display = "none";
+          setRefreshState(false);
           return;
         }
 
-        const cacheLocal = recuperarMultasCache(cpf, cnh);
-        if (cacheLocal) {
-          const cacheTemCamposFinanceiros = Array.isArray(cacheLocal.multas) &&
-            cacheLocal.multas.some((m) => campo(m?.valor) !== "-" || campo(m?.vencimento) !== "-" || campo(m?.valorComDesconto) !== "-");
+        const cacheLocal = forceRefresh ? null : recuperarMultasCache(cpf, cnh);
+        if (!forceRefresh && cacheLocal) {
+          const cacheTemCamposFinanceiros = possuiCamposFinanceiros(cacheLocal.multas);
 
           // Se o cache veio incompleto (todos os autos sem valor/vencimento/desconto), força refresh.
           if (cacheTemCamposFinanceiros || !Array.isArray(cacheLocal.multas) || cacheLocal.multas.length === 0) {
             document.getElementById("multas-loading").style.display = "none";
             renderMultas(cacheLocal.multas);
+            setRefreshState(false);
             return;
           }
+
+          forceRefresh = true;
         }
 
         try {
-          const resp = await fetch(`${API_URL}/consultar-multas`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cpf, cnh })
-          });
-          const bodyText = await resp.text();
-          let data;
-          try {
-            data = bodyText ? JSON.parse(bodyText) : {};
-          } catch (e) {
-            data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+          const consultarApi = async (force = false) => {
+            const resp = await fetch(`${API_URL}/consultar-multas`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cpf, cnh, forceRefresh: Boolean(force) })
+            });
+            const bodyText = await resp.text();
+            let data;
+            try {
+              data = bodyText ? JSON.parse(bodyText) : {};
+            } catch (e) {
+              data = { ok: false, error: bodyText || `HTTP ${resp.status}` };
+            }
+            return { resp, data };
+          };
+
+          let { resp, data } = await consultarApi(forceRefresh);
+
+          if (data.ok && Array.isArray(data.multas) && data.multas.length > 0 && !possuiCamposFinanceiros(data.multas) && !forceRefresh) {
+            ({ resp, data } = await consultarApi(true));
           }
+
           document.getElementById("multas-loading").style.display = "none";
 
           if (!data.ok) {
             document.getElementById("multas-subtitle").innerText = formatarErroMultas(data, resp.status);
+            setRefreshState(false);
             return;
           }
 
@@ -2199,7 +2259,14 @@
         } catch (err) {
           document.getElementById("multas-loading").style.display = "none";
           document.getElementById("multas-subtitle").innerText = "Erro: " + err.message;
+        } finally {
+          setRefreshState(false);
         }
+      }
+
+      function atualizarMultas(event) {
+        if (event?.stopPropagation) event.stopPropagation();
+        consultarMultas({ ignorarCache: true });
       }
 
       function abrirCertidao(event) {

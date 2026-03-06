@@ -145,10 +145,15 @@ async function executarConsultaMultasComRetry(cpfDigits, cnhDigits, apiKey) {
   };
 }
 
-async function consultarMultasComCache(cpfDigits, cnhDigits, apiKey) {
+async function consultarMultasComCache(cpfDigits, cnhDigits, apiKey, options = {}) {
+  const { forceRefresh = false } = options;
   const key = multasCacheKey(cpfDigits, cnhDigits);
-  const cacheValido = getCachedMultas(cpfDigits, cnhDigits);
-  if (cacheValido) return { ...cacheValido, fromCache: true };
+  if (forceRefresh) {
+    multasCacheStore.delete(key);
+  } else {
+    const cacheValido = getCachedMultas(cpfDigits, cnhDigits);
+    if (cacheValido) return { ...cacheValido, fromCache: true };
+  }
 
   if (!apiKey) throw new Error("Serviço de Captcha indisponível.");
 
@@ -541,7 +546,7 @@ router.get("/certidao/:caseId", (req, res) => {
 // =========================
 router.post("/consultar-multas", async (req, res) => {
   try {
-    const { cpf, cnh } = req.body;
+    const { cpf, cnh, forceRefresh } = req.body;
     const cpfDigits = onlyDigits(cpf);
     const cnhDigits = onlyDigits(cnh);
     const apiKey = process.env.TWOCAPTCHA_API_KEY;
@@ -556,8 +561,10 @@ router.post("/consultar-multas", async (req, res) => {
       return res.status(400).json({ ok: false, error: "CNH inválida." });
     }
 
-    const resultado = await consultarMultasComCache(cpfDigits, cnhDigits, apiKey);
-    console.log(`[MULTAS] Consulta concluida para ${cpfDigits}. Quantidade extraida: ${resultado?.multas?.length || 0}. Cache=${resultado.fromCache ? "hit" : "miss"}`);
+    const resultado = await consultarMultasComCache(cpfDigits, cnhDigits, apiKey, {
+      forceRefresh: Boolean(forceRefresh),
+    });
+    console.log(`[MULTAS] Consulta concluida para ${cpfDigits}. Quantidade extraida: ${resultado?.multas?.length || 0}. Cache=${resultado.fromCache ? "hit" : "miss"} ForceRefresh=${Boolean(forceRefresh)}`);
 
     return res.json({
       ok: true,
