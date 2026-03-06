@@ -267,6 +267,13 @@
             line-height: 1.6;
         }
 
+        .section-meta {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #6c757d;
+            font-weight: 600;
+        }
+
         .section-actions {
             margin-top: 14px;
             display: flex;
@@ -1060,6 +1067,7 @@
                     <div class="section-actions">
                         <button id="btn-refresh-multas" class="btn-refresh" onclick="atualizarMultas(event)">Atualizar dados</button>
                     </div>
+                    <p class="section-meta" id="multas-last-update"></p>
                 </div>
                 <div id="multas-lista" class="multas-lista"></div>
                 <div id="multas-loading" class="loading-spinner">
@@ -1589,7 +1597,7 @@
           cnh: sanitizeCNH(cnh),
           multas: Array.isArray(data.multas) ? data.multas : [],
           resumo: data?.resumo && typeof data.resumo === "object" ? data.resumo : {},
-          createdAt: Date.now(),
+          createdAt: Number.isFinite(data?.createdAt) ? Number(data.createdAt) : Date.now(),
         };
 
         window.__lastMultasCache = payload;
@@ -2053,6 +2061,7 @@
         const loadingEl = document.getElementById("multas-loading");
         const listaEl = document.getElementById("multas-lista");
         const refreshBtn = document.getElementById("btn-refresh-multas");
+        const lastUpdateEl = document.getElementById("multas-last-update");
         let forceRefresh = Boolean(options?.ignorarCache);
 
         const setRefreshState = (loading) => {
@@ -2061,9 +2070,20 @@
           refreshBtn.innerText = loading ? "Atualizando..." : "Atualizar dados";
         };
 
+        const setLastUpdate = (timestampMs) => {
+          if (!lastUpdateEl) return;
+          if (!Number.isFinite(timestampMs)) {
+            lastUpdateEl.innerText = "";
+            return;
+          }
+          const data = new Date(timestampMs);
+          lastUpdateEl.innerText = `Última atualização: ${data.toLocaleTimeString("pt-BR", { hour12: false })}`;
+        };
+
         if (subtitleEl) subtitleEl.innerText = forceRefresh ? "Atualizando dados de multas..." : "Consultando multas...";
         if (loadingEl) loadingEl.style.display = "block";
         if (listaEl) listaEl.innerHTML = "";
+        if (lastUpdateEl && forceRefresh) lastUpdateEl.innerText = "Atualizando dados...";
         setRefreshState(true);
 
         const escapeHtml = (valor) => String(valor ?? "")
@@ -2078,6 +2098,66 @@
         const campo = (valor) => {
           const limpo = normalizar(valor);
           return limpo && limpo.toLowerCase() !== "null" ? limpo : "-";
+        };
+
+        const normalizarSemAcento = (valor) =>
+          String(valor ?? "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toUpperCase();
+
+        const orgaoLegivel = (orgao) => {
+          const bruto = campo(orgao);
+          if (bruto === "-") return "-";
+          const chave = bruto.toUpperCase().replace(/\s+/g, "");
+          if (chave === "PMRJ") return "PMRJ - Prefeitura do Rio de Janeiro";
+          if (chave === "PMERJ") return "PMERJ - Polícia Militar (DETRAN.RJ)";
+          return bruto;
+        };
+
+        const ehStatusAutuacao = (m) => {
+          const base = normalizarSemAcento(`${campo(m?.statusAtual)} ${campo(m?.situacao)}`);
+          return base.includes("AUTUACAO");
+        };
+
+        const valorTabelaPorGravidade = {
+          LEVE: "88,38",
+          MEDIA: "130,16",
+          GRAVE: "195,23",
+          GRAVISSIMA: "293,47",
+        };
+
+        const valorTabelaPorCodigo = {
+          "75870": "293,47",
+          "75790": "293,47",
+          "74550": "130,16",
+          "57030": "130,16",
+          "60503": "293,47",
+        };
+
+        const valorAutuacaoFallback = (m) => {
+          const enquadramento = normalizarSemAcento(campo(m?.enquadramento));
+          if (enquadramento.includes("GRAVISSIMA")) return valorTabelaPorGravidade.GRAVISSIMA;
+          if (enquadramento.includes("GRAVE")) return valorTabelaPorGravidade.GRAVE;
+          if (enquadramento.includes("MEDIA")) return valorTabelaPorGravidade.MEDIA;
+          if (enquadramento.includes("LEVE")) return valorTabelaPorGravidade.LEVE;
+
+          const codigo = campo(m?.infracao).match(/^(\d{5})\b/)?.[1] || "";
+          return valorTabelaPorCodigo[codigo] || "-";
+        };
+
+        const valorExibicao = (m) => {
+          const valorPortal = campo(m?.valor);
+          if (valorPortal !== "-") return valorPortal;
+          if (ehStatusAutuacao(m)) return valorAutuacaoFallback(m);
+          return "-";
+        };
+
+        const vencimentoExibicao = (m) => {
+          const vencimentoPortal = campo(m?.vencimento);
+          if (vencimentoPortal !== "-") return vencimentoPortal;
+          if (ehStatusAutuacao(m)) return "Aguardando penalidade";
+          return "-";
         };
 
         const limparStatusAtual = (statusAtual, situacao) => {
@@ -2130,7 +2210,7 @@
 
         const possuiCamposFinanceiros = (multas) =>
           Array.isArray(multas) &&
-          multas.some((m) => campo(m?.valor) !== "-" || campo(m?.vencimento) !== "-" || campo(m?.valorComDesconto) !== "-");
+          multas.some((m) => valorExibicao(m) !== "-" || vencimentoExibicao(m) !== "-");
 
         const classeStatus = (status) => {
           const s = String(status || "").toLowerCase();
@@ -2164,6 +2244,9 @@
             const infoPagamento = infoPagamentoMulta(m);
             const pontosValor = campo(m.pontos);
             const classePontos = pontosValor !== "-" ? "detalhe-value detalhe-pontos" : "detalhe-value";
+            const valorDaMulta = valorExibicao(m);
+            const vencimentoDaMulta = vencimentoExibicao(m);
+            const orgaoDaMulta = orgaoLegivel(m.orgao);
 
             html += `
               <div class="multa-card">
@@ -2173,7 +2256,7 @@
                 </div>
                 <div class="multa-head-grid">
                   <div class="multa-head-item"><span class="multa-head-label">Data:</span> ${escapeHtml(campo(m.data))}</div>
-                  <div class="multa-head-item"><span class="multa-head-label">Órgão:</span> ${escapeHtml(campo(m.orgao))}</div>
+                  <div class="multa-head-item"><span class="multa-head-label">Órgão:</span> ${escapeHtml(orgaoDaMulta)}</div>
                   <div class="multa-head-item"><span class="multa-head-label">Placa:</span> ${escapeHtml(campo(m.placa))}</div>
                   <div class="multa-head-item"><span class="multa-head-label">Proprietário:</span> ${escapeHtml(campo(m.proprietario))}</div>
                   <div class="multa-head-item"><span class="multa-head-label">Resp. Pontos:</span> ${escapeHtml(campo(m.responsavelPontos))}</div>
@@ -2184,10 +2267,9 @@
                   <div class="multa-detalhe"><span class="detalhe-label">Local</span><span class="detalhe-value">${escapeHtml(campo(m.local))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Enquadramento</span><span class="detalhe-value">${escapeHtml(campo(m.enquadramento))}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Pontos</span><span class="${classePontos}">${escapeHtml(pontosValor)}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Vencimento</span><span class="detalhe-value">${escapeHtml(campo(m.vencimento))}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Vencimento</span><span class="detalhe-value">${escapeHtml(vencimentoDaMulta)}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Processo</span><span class="detalhe-value">${escapeHtml(campo(m.processo))}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Valor</span><span class="detalhe-value">${escapeHtml(campo(m.valor))}</span></div>
-                  <div class="multa-detalhe"><span class="detalhe-label">Valor com Desconto</span><span class="detalhe-value">${escapeHtml(campo(m.valorComDesconto))}</span></div>
+                  <div class="multa-detalhe"><span class="detalhe-label">Valor</span><span class="detalhe-value">${escapeHtml(valorDaMulta)}</span></div>
                   <div class="multa-detalhe"><span class="detalhe-label">Informação de Pagamento</span><span class="detalhe-value">${escapeHtml(infoPagamento)}</span></div>
                 </div>
               </div>`;
@@ -2199,6 +2281,7 @@
         if (!cpf || !cnh) {
           document.getElementById("multas-subtitle").innerText = "Dados não disponíveis. Volte e faça a consulta primeiro.";
           document.getElementById("multas-loading").style.display = "none";
+          setLastUpdate(null);
           setRefreshState(false);
           return;
         }
@@ -2207,10 +2290,11 @@
         if (!forceRefresh && cacheLocal) {
           const cacheTemCamposFinanceiros = possuiCamposFinanceiros(cacheLocal.multas);
 
-          // Se o cache veio incompleto (todos os autos sem valor/vencimento/desconto), força refresh.
+          // Se o cache veio incompleto (todos os autos sem valor/vencimento), força refresh.
           if (cacheTemCamposFinanceiros || !Array.isArray(cacheLocal.multas) || cacheLocal.multas.length === 0) {
             document.getElementById("multas-loading").style.display = "none";
             renderMultas(cacheLocal.multas);
+            setLastUpdate(cacheLocal.createdAt);
             setRefreshState(false);
             return;
           }
@@ -2245,20 +2329,25 @@
 
           if (!data.ok) {
             document.getElementById("multas-subtitle").innerText = formatarErroMultas(data, resp.status);
+            setLastUpdate(null);
             setRefreshState(false);
             return;
           }
 
+          const momentoAtualizacao = Date.now();
           salvarMultasCache(cpf, cnh, {
             multas: Array.isArray(data.multas) ? data.multas : [],
             resumo: data?.resumo || {},
+            createdAt: momentoAtualizacao,
           });
 
           renderMultas(data.multas);
+          setLastUpdate(momentoAtualizacao);
 
         } catch (err) {
           document.getElementById("multas-loading").style.display = "none";
           document.getElementById("multas-subtitle").innerText = "Erro: " + err.message;
+          setLastUpdate(null);
         } finally {
           setRefreshState(false);
         }
