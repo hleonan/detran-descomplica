@@ -1,6 +1,6 @@
 // src/services/certidao_v3.js
 // ============================================================
-// Despachante Virtual RJ - Automacao de Certidao DETRAN
+// VOCE RECORRE - Automacao de Certidao DETRAN
 // ============================================================
 // Versao 3.2 - Corrigida com base em 15 certidoes reais
 //
