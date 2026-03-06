@@ -30,7 +30,12 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 12 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const ok = ["application/pdf", "image/jpeg", "image/png"].includes(file.mimetype);
+    const mime = String(file.mimetype || "").toLowerCase();
+    const nome = String(file.originalname || "").toLowerCase();
+    const isPdf = mime === "application/pdf" || nome.endsWith(".pdf");
+    const isJpeg = mime === "image/jpeg" || mime === "image/jpg" || nome.endsWith(".jpg") || nome.endsWith(".jpeg");
+    const isPng = mime === "image/png" || nome.endsWith(".png");
+    const ok = isPdf || isJpeg || isPng;
     if (!ok) return cb(new Error("Tipo inválido. Envie PDF, JPG ou PNG."));
     cb(null, true);
   },
@@ -223,8 +228,12 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
     // Detectar origem (upload ou camera)
     const origem = req.body?.origem || "upload";
 
+    const mime = String(req.file.mimetype || "").toLowerCase();
+    const nomeArquivo = String(req.file.originalname || "").toLowerCase();
+    const isPdf = mime.includes("pdf") || nomeArquivo.endsWith(".pdf");
+
     // --- FLUXO 1: PDF (Google Vision via Google Cloud Storage) ---
-    if (req.file.mimetype === "application/pdf") {
+    if (isPdf) {
       const bucketName = getOcrBucketName();
       if (!bucketName) {
         return res.status(500).json({

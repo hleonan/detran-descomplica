@@ -1006,7 +1006,7 @@
                         <button class="btn-service" onclick="selectService('multas', event)">Ver Multas</button>
                     </div>
                     <div class="service-card" onclick="selectService('suspensao', event)">
-                        <div class="service-icon">⚖️</div>
+                        <div class="service-icon">⛔</div>
                         <h3 class="service-title">SUSPENSÃO/CASSAÇÃO CNH</h3>
                         <p class="service-description">Veja seus processos administrativo de SUSPENSÃO ou CASSAÇÃO</p>
                         <button class="btn-service">Consultar Processo</button>
@@ -2081,7 +2081,7 @@
           const situacao = campo(m?.situacao);
 
           if (pagamentoStatus === "PAGA" || /PAGA?\s*EM|QUITAD|LIQUID/i.test(situacao)) return "Pago";
-          if (pagamentoStatus === "NAO PAGA" || pagamentoStatus === "NÃO PAGA" || /N[AÃ]O\s*PAGA/i.test(situacao)) return "Nao Pago";
+          if (pagamentoStatus === "NAO PAGA" || pagamentoStatus === "NÃO PAGA" || /N[AÃ]O\s*PAGA/i.test(situacao)) return "NÃO PAGO";
           if (/cancelad/i.test(situacao)) return "Cancelada";
           return "Pendente";
         };
