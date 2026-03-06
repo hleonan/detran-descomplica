@@ -207,6 +207,61 @@ async function resolverCaptcha2Captcha(twocaptchaKey, sitekey, pageUrl) {
 }
 
 /**
+ * Aguarda sinais reais de resultado após clicar em "Consultar",
+ * evitando sleep fixo longo quando a resposta já chegou.
+ */
+async function aguardarResultadoConsulta(page) {
+  const detectouRapido = await page
+    .waitForFunction(() => {
+      const txt = (document.body?.innerText || "").replace(/\s+/g, " ").toUpperCase();
+      if (!txt || txt.length < 40) return false;
+
+      const sinais = [
+        "CERTIDAO",
+        "CERTIFICAMOS",
+        "NADA CONSTA",
+        "CLIQUE AQUI PARA EMITIR EXTRATO COMPLETO",
+        "DADOS INFORMADOS",
+        "NAO CONFEREM",
+        "NAO CADASTRAD",
+        "CAPTCHA INCORRETO",
+        "CODIGO DE VERIFICACAO",
+      ];
+
+      return sinais.some((s) => txt.includes(s));
+    }, { timeout: 12000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (detectouRapido) return;
+
+  await page.waitForLoadState("networkidle", { timeout: 18000 }).catch(() => {
+    console.log("[DETRAN] NetworkIdle timeout (seguindo com validacao de conteudo)");
+  });
+  await page.waitForTimeout(800);
+}
+
+async function esperarNovaAba(context, paginasAntes, timeoutMs = 4500) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs) {
+    const pages = context.pages();
+    if (pages.length > paginasAntes) return pages[pages.length - 1];
+    await new Promise((r) => setTimeout(r, 180));
+  }
+  return null;
+}
+
+async function aguardarCarregamentoCurto(page, timeoutMs = 15000) {
+  await page.waitForLoadState("domcontentloaded", { timeout: timeoutMs }).catch(() => {
+    console.log("[DETRAN] DomContentLoaded timeout (seguindo)");
+  });
+  await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {
+    console.log("[DETRAN] NetworkIdle timeout (seguindo)");
+  });
+  await page.waitForTimeout(700);
+}
+
+/**
  * Classifica a situacao da CNH usando FRASES EXATAS do DETRAN-RJ.
  *
  * Baseado na analise de 15 certidoes reais.
@@ -511,11 +566,7 @@ export async function emitirCertidaoPDF(cpf, cnh) {
     // ============================================================
     console.log("[DETRAN] Clicando em Consultar...");
     await page.click("#btPesquisar");
-
-    await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
-      console.log("[DETRAN] NetworkIdle timeout (normal em sites lentos)");
-    });
-    await page.waitForTimeout(3000);
+    await aguardarResultadoConsulta(page);
 
     // ============================================================
     // 6. TRAVA DE SEGURANCA -- Validacao do Resultado (Pagina 1)
@@ -597,29 +648,20 @@ export async function emitirCertidaoPDF(cpf, cnh) {
 
       if (clicouExtrato) {
         console.log("[DETRAN] Aguardando carregamento da Pagina 2...");
-        
+
         const paginasAntes = context.pages().length;
-        await page.waitForTimeout(2500);
+        const novaAba = await esperarNovaAba(context, paginasAntes);
         const paginasDepois = context.pages();
         console.log(`[DETRAN] Total de abas abertas: ${paginasDepois.length}`);
 
-        if (paginasDepois.length > paginasAntes) {
+        if (novaAba || paginasDepois.length > paginasAntes) {
           console.log("[DETRAN] Nova aba detectada! Mudando para a nova aba...");
-          page = paginasDepois[paginasDepois.length - 1];
+          page = novaAba || paginasDepois[paginasDepois.length - 1];
           await page.bringToFront();
-          
-          await page.waitForLoadState("domcontentloaded", { timeout: 45000 }).catch(() => {
-            console.log("[DETRAN] DomContentLoaded timeout na nova aba");
-          });
-          await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
-            console.log("[DETRAN] NetworkIdle timeout na nova aba");
-          });
-          await page.waitForTimeout(3000);
+
+          await aguardarCarregamentoCurto(page, 22000);
         } else {
-          await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {
-            console.log("[DETRAN] NetworkIdle timeout na Pagina 2");
-          });
-          await page.waitForTimeout(2500);
+          await aguardarCarregamentoCurto(page, 18000);
         }
 
         textoExtrato = await extrairTextoDaPagina(page);

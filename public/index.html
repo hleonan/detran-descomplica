@@ -1687,7 +1687,9 @@
         try {
           let resp;
           let data;
-          const maxTentativasConsulta = 2;
+          // Retry principal fica no backend para evitar duplicidade de tentativas
+          // (frontend + backend) que aumenta muito o tempo total.
+          const maxTentativasConsulta = 1;
 
           for (let tentativa = 1; tentativa <= maxTentativasConsulta; tentativa++) {
             resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
@@ -1780,7 +1782,8 @@
           if(loadingInterval) clearInterval(loadingInterval);
           updateLoadingMessage("Consulta finalizada com sucesso!");
           updateLoadingProgress(100);
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          const atrasoFinalMs = data?.cache === "hit" ? 200 : 900;
+          await new Promise(resolve => setTimeout(resolve, atrasoFinalMs));
           stopSmartLoading();
        
           const icon = document.getElementById("result-icon");
