@@ -2166,6 +2166,11 @@
           return base.includes("AUTUACAO");
         };
 
+        const ehStatusAutuacaoDefesaPrevia = (m) => {
+          const base = normalizarSemAcento(`${campo(m?.statusAtual)} ${campo(m?.situacao)}`);
+          return base.includes("AUTUACAO") && base.includes("DEFESA PREVIA");
+        };
+
         const valorTabelaPorGravidade = {
           LEVE: "88,38",
           MEDIA: "130,16",
@@ -2202,6 +2207,7 @@
         const vencimentoExibicao = (m) => {
           const vencimentoPortal = campo(m?.vencimento);
           if (vencimentoPortal !== "-") return vencimentoPortal;
+          if (ehStatusAutuacaoDefesaPrevia(m)) return "Aguardando Julgamento da Defesa";
           if (ehStatusAutuacao(m)) return "Aguardando penalidade";
           return "-";
         };
