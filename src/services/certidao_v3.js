@@ -307,6 +307,7 @@ function classificarCertidao(textoCompleto) {
 
   const contarPenalidades = (tipo) => {
     const regexes = [
+      new RegExp(`PENALIDADES?\\s+DE\\s+${tipo}\\s*\\((\\d+)\\s+REGISTRO(?:S)?\\)`, "g"),
       new RegExp(`POSSUI\\s+(\\d+)\\s+PENALIDADE\\(S\\)\\s+DE\\s+${tipo}`, "g"),
       new RegExp(`PENALIDADE\\(S\\)\\s+DE\\s+${tipo}[^\\d]{0,20}(\\d+)`, "g"),
     ];
@@ -323,6 +324,7 @@ function classificarCertidao(textoCompleto) {
   
 const contarInfracoes = () => {
     const regexes = [
+      /MULTAS\s*\((\d{1,3})\s+REGISTROS?\)/g,
       /TODAS AS INFRACOES\s*-\s*5 ANOS[^\d]{0,25}(\d{1,3})/g,
       /QTD\s*DE\s*AUTOS[^\d]{0,20}(\d{1,3})/g,
       /TODAS\s+AS\s+INFRACOES\s*(?:\n|\r|\s)*QTD\s*DE\s*AUTOS[^\d]{0,25}(\d{1,3})/g,
@@ -353,6 +355,12 @@ const contarInfracoes = () => {
   const temMarcadorExtrato =
     textoNormalizado.includes("CLIQUE AQUI PARA EMITIR EXTRATO COMPLETO") ||
     textoNormalizado.includes("EMITIR EXTRATO COMPLETO");
+  const temSecaoMultas = /MULTAS\s*(?:\(\d+\s+REGISTRO(?:S)?\))?/.test(textoNormalizado);
+  const temSecaoSuspensao = /PENALIDADES?\s+DE\s+SUSPENSAO(?:\s*\(\d+\s+REGISTRO(?:S)?\))?/.test(textoNormalizado);
+  const temSecaoCassacao = /PENALIDADES?\s+DE\s+CASSACAO(?:\s*\(\d+\s+REGISTRO(?:S)?\))?/.test(textoNormalizado);
+  const possuiIndicadorSuspensao = qtdSuspensao > 0 || temSecaoSuspensao;
+  const possuiIndicadorCassacao = qtdCassacao > 0 || temSecaoCassacao;
+  const possuiIndicadorMultas = qtdInfracoes > 0 || temSecaoMultas;
 
   const temTabelaInfracoes =
     textoNormalizado.includes("TODAS AS INFRACOES") ||
@@ -360,30 +368,35 @@ const contarInfracoes = () => {
     textoNormalizado.includes("PONTUAVEIS - 12 MESES") ||
     textoNormalizado.includes("INFRACOES MANDATORIAS - 12 MESES");
 
-  const temMarcadorOcorrencia = temMarcadorExtrato || temTabelaInfracoes;
+  const temMarcadorOcorrencia =
+    temMarcadorExtrato ||
+    temTabelaInfracoes ||
+    possuiIndicadorMultas ||
+    possuiIndicadorSuspensao ||
+    possuiIndicadorCassacao;
 
   // Prioridade 1: penalidades graves
-  if (qtdCassacao > 0) {
+  if (possuiIndicadorCassacao) {
     analise.status = "CASSACAO";
     analise.temProblemas = true;
     analise.temCassacao = true;
-    analise.temSuspensao = qtdSuspensao > 0;
-    analise.temMultas = qtdInfracoes > 0 || temMarcadorOcorrencia;
+    analise.temSuspensao = possuiIndicadorSuspensao;
+    analise.temMultas = possuiIndicadorMultas || temMarcadorExtrato || temTabelaInfracoes;
     analise.motivo = "Identificamos processo de cassacao ativo no DETRAN.";
     return analise;
   }
 
-  if (qtdSuspensao > 0) {
+  if (possuiIndicadorSuspensao) {
     analise.status = "SUSPENSAO";
     analise.temProblemas = true;
     analise.temSuspensao = true;
-    analise.temMultas = qtdInfracoes > 0 || temMarcadorOcorrencia;
+    analise.temMultas = possuiIndicadorMultas || temMarcadorExtrato || temTabelaInfracoes;
     analise.motivo = "Identificamos processo de suspensao do direito de dirigir.";
     return analise;
   }
 
   // Prioridade 2: ocorrencia de multas (quantidade OU marcadores estruturais da pagina de extrato)
-  if (qtdInfracoes > 0 || temMarcadorOcorrencia) {
+  if (possuiIndicadorMultas || temMarcadorOcorrencia) {
     analise.status = "MULTAS";
     analise.temProblemas = true;
     analise.temMultas = true;

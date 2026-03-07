@@ -1829,14 +1829,43 @@
       }
 
       const CERTIDAO_CACHE_KEY = "__ultimaCertidao";
+      const CERTIDAO_CACHE_BY_CONSULTA_KEY = "__certidaoPorConsulta";
       const CERTIDAO_CACHE_TTL_MS = 60 * 60 * 1000;
       const MULTAS_CACHE_KEY = "__ultimaConsultaMultas";
       const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
       const PROCESSO_CACHE_KEY = "__ultimaConsultaProcesso";
       const PROCESSO_CACHE_TTL_MS = 60 * 60 * 1000;
 
-      function salvarCertidaoCache(caseId, pdfBase64 = null, extras = {}) {
+      function certidaoConsultaCacheKey(cpf, cnh) {
+        const cpfDigits = onlyDigits(cpf);
+        const cnhDigits = sanitizeCNH(cnh);
+        if (!cpfDigits || !cnhDigits) return null;
+        return `${cpfDigits}:${cnhDigits}`;
+      }
+
+      function lerCertidoesPorConsulta() {
+        try {
+          const raw = localStorage.getItem(CERTIDAO_CACHE_BY_CONSULTA_KEY);
+          if (!raw) return {};
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch (err) {
+          return {};
+        }
+      }
+
+      function salvarCertidoesPorConsulta(cacheMap = {}) {
+        try {
+          localStorage.setItem(CERTIDAO_CACHE_BY_CONSULTA_KEY, JSON.stringify(cacheMap));
+        } catch (err) {}
+      }
+
+      function salvarCertidaoCache(cpf, cnh, caseId, pdfBase64 = null, extras = {}) {
+        const consultaKey = certidaoConsultaCacheKey(cpf, cnh);
         const payload = {
+          key: consultaKey,
+          cpf: onlyDigits(cpf),
+          cnh: sanitizeCNH(cnh),
           caseId: caseId || null,
           pdfBase64: pdfBase64 || null,
           status: extras?.status || null,
@@ -1861,6 +1890,34 @@
         } catch (err) {
           console.warn("Não foi possível salvar cache local da certidão.", err);
         }
+
+        if (consultaKey) {
+          const cacheMap = lerCertidoesPorConsulta();
+          cacheMap[consultaKey] = payload;
+
+          const agora = Date.now();
+          for (const [chave, item] of Object.entries(cacheMap)) {
+            if (!item?.createdAt || agora - item.createdAt > CERTIDAO_CACHE_TTL_MS) {
+              delete cacheMap[chave];
+            }
+          }
+          salvarCertidoesPorConsulta(cacheMap);
+        }
+      }
+
+      function recuperarCertidaoCachePorConsulta(cpf, cnh) {
+        const consultaKey = certidaoConsultaCacheKey(cpf, cnh);
+        if (!consultaKey) return null;
+
+        const cacheMap = lerCertidoesPorConsulta();
+        const cache = cacheMap[consultaKey];
+        if (!cache) return null;
+        if (!cache?.createdAt || Date.now() - cache.createdAt > CERTIDAO_CACHE_TTL_MS) {
+          delete cacheMap[consultaKey];
+          salvarCertidoesPorConsulta(cacheMap);
+          return null;
+        }
+        return cache;
       }
 
       function recuperarCertidaoCache() {
@@ -2021,48 +2078,64 @@
         }
        
         try {
-          let resp;
+          let resp = { ok: true, status: 200 };
           let data;
           // Retry principal fica no backend para evitar duplicidade de tentativas
           // (frontend + backend) que aumenta muito o tempo total.
           const maxTentativasConsulta = 1;
+          const cacheConsulta = recuperarCertidaoCachePorConsulta(cpfDigits, cnhDigits);
+          if (cacheConsulta) {
+            updateLoadingMessage("Consulta já disponível em cache local. Carregando resultado...");
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            data = {
+              ok: true,
+              caseId: cacheConsulta.caseId || null,
+              pdfBase64: cacheConsulta.pdfBase64 || null,
+              status: cacheConsulta.status || null,
+              temMultas: Boolean(cacheConsulta.temMultas),
+              temSuspensao: Boolean(cacheConsulta.temSuspensao),
+              temCassacao: Boolean(cacheConsulta.temCassacao),
+              nome: cacheConsulta.nome || null,
+              cache: "hit-local",
+            };
+          } else {
+            for (let tentativa = 1; tentativa <= maxTentativasConsulta; tentativa++) {
+              resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  cpf: cpfDigits,
+                  cnh: cnhDigits,
+                  origem: origemDados,
+                  dataNascimento,
+                  dataPrimeiraHabilitacao,
+                  nome: identidadeCompativel?.nome || null,
+                  validadeCnh: identidadeCompativel?.validadeCnh || null,
+                  categoriaCnh: identidadeCompativel?.categoriaCnh || null,
+                  docIdentidade: identidadeCompativel?.docIdentidade || null,
+                  orgaoEmissor: identidadeCompativel?.orgaoEmissor || null,
+                  ufEmissor: identidadeCompativel?.ufEmissor || null,
+                  dataEmissaoCnh: identidadeCompativel?.dataEmissaoCnh || null,
+                  localEmissaoCnh: identidadeCompativel?.localEmissaoCnh || null,
+                }),
+              });
 
-          for (let tentativa = 1; tentativa <= maxTentativasConsulta; tentativa++) {
-            resp = await fetchComRetry(`${API_URL}/consultar-certidao`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                cpf: cpfDigits,
-                cnh: cnhDigits,
-                origem: origemDados,
-                dataNascimento,
-                dataPrimeiraHabilitacao,
-                nome: identidadeCompativel?.nome || null,
-                validadeCnh: identidadeCompativel?.validadeCnh || null,
-                categoriaCnh: identidadeCompativel?.categoriaCnh || null,
-                docIdentidade: identidadeCompativel?.docIdentidade || null,
-                orgaoEmissor: identidadeCompativel?.orgaoEmissor || null,
-                ufEmissor: identidadeCompativel?.ufEmissor || null,
-                dataEmissaoCnh: identidadeCompativel?.dataEmissaoCnh || null,
-                localEmissaoCnh: identidadeCompativel?.localEmissaoCnh || null,
-              }),
-            });
+              try {
+                data = await resp.json();
+              } catch (e) {
+                data = { ok: false, error: "Resposta invalida do servidor." };
+              }
 
-            try {
-              data = await resp.json();
-            } catch (e) {
-              data = { ok: false, error: "Resposta invalida do servidor." };
+              if (resp.ok && data.ok) break;
+
+              if (tentativa < maxTentativasConsulta && deveRepetirConsultaCertidao(resp.status, data)) {
+                updateLoadingMessage(`Instabilidade na consulta. Tentando novamente (${tentativa + 1}/${maxTentativasConsulta})...`);
+                await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
+                continue;
+              }
+
+              break;
             }
-
-            if (resp.ok && data.ok) break;
-
-            if (tentativa < maxTentativasConsulta && deveRepetirConsultaCertidao(resp.status, data)) {
-              updateLoadingMessage(`Instabilidade na consulta. Tentando novamente (${tentativa + 1}/${maxTentativasConsulta})...`);
-              await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
-              continue;
-            }
-
-            break;
           }
           
           // ========================================================
@@ -2132,7 +2205,8 @@
           if(loadingInterval) clearInterval(loadingInterval);
           updateLoadingMessage("Consulta finalizada com sucesso!");
           updateLoadingProgress(100);
-          const atrasoFinalMs = data?.cache === "hit" ? 200 : 900;
+          const cacheTag = String(data?.cache || "").toLowerCase();
+          const atrasoFinalMs = cacheTag === "hit" || cacheTag === "hit-local" ? 200 : 900;
           await new Promise(resolve => setTimeout(resolve, atrasoFinalMs));
           stopSmartLoading();
        
@@ -2144,7 +2218,7 @@
           const nomeMotorista = data.nome ? `<strong>${data.nome}</strong>` : "Motorista";
 
           // Salva certidão para uso posterior (cache local por 1h)
-          salvarCertidaoCache(data.caseId, data.pdfBase64 || null, {
+          salvarCertidaoCache(cpfDigits, cnhDigits, data.caseId, data.pdfBase64 || null, {
             status: data.status,
             temMultas: data.temMultas,
             temSuspensao: data.temSuspensao,
@@ -2161,6 +2235,14 @@
         
           // ── CENÁRIO 4: MULTAS + SUSPENSÃO + CASSAÇÃO ──
           if (data.status === "CASSACAO" || data.temCassacao) {
+            const sinaisAdicionais = [];
+            if (data.temSuspensao) sinaisAdicionais.push("suspensão");
+            if (data.temMultas) sinaisAdicionais.push("multas");
+            const textoSinaisAdicionais = sinaisAdicionais.length
+              ? `<p style="font-size: 14px; color: #7f1d1d; margin-top: 8px;">
+                  Também foram identificadas ocorrências de <strong>${sinaisAdicionais.join(" e ")}</strong>.
+                </p>`
+              : "";
             icon.innerText = "🚨";
             title.innerText = "ALERTA MÁXIMO: RISCO DE CASSAÇÃO DA CNH";
             title.style.color = "#B71C1C";
@@ -2177,6 +2259,7 @@
                   <p style="font-size: 14px; color: #C62828; margin-top: 8px;">
                     Isso significa que você pode <strong>perder sua CNH definitivamente</strong> e precisar iniciar um novo processo de habilitação do zero — como se nunca tivesse tirado carteira.
                   </p>
+                  ${textoSinaisAdicionais}
                 </div>
                 <div style="background: #FFF3CD; border-left: 4px solid #FFC107; padding: 15px; border-radius: 8px;">
                   <p style="font-size: 14px; color: #856404; margin: 0;">

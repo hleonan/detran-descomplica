@@ -4,6 +4,25 @@ import fs from "fs";
 // CONFIGURAÇÃO DO GOOGLE SHEETS
 // ====================================================
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbzQ5n8Vi8SYLcVMMg43OzhOjAC8QnNWy0ZLHBsxgBAZYNXuNxSJ4WlB0kWpHiTxoYyq/exec"; 
+const SHEET_COLUMNS = [
+  "cpf",
+  "cnh",
+  "nome",
+  "nomeCompleto",
+  "status",
+  "motivo",
+  "origem",
+  "dataNascimento",
+  "dataPrimeiraHabilitacao",
+  "validadeCnh",
+  "categoriaCnh",
+  "docIdentidade",
+  "orgaoEmissor",
+  "ufEmissor",
+  "dataEmissaoCnh",
+  "localEmissaoCnh",
+  "ultimaConsulta",
+];
 
 // Armazenamento em memória (Backup rápido)
 const leadsMap = new Map();
@@ -119,15 +138,20 @@ async function enviarParaGoogleSheets(lead) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        _sheetColumns: SHEET_COLUMNS,
+        colunasEsperadas: SHEET_COLUMNS,
         cpf: lead.cpf,
         cnh: lead.cnh,
         nome: lead.nome,
         nomeCompleto: lead.nome,
+        nome_completo: lead.nome,
         status: lead.status, // Agora só vai chegar "OK", "RESTRICAO" ou "ERRO"
         motivo: lead.motivo,
         origem: lead.origem,
         dataNascimento: extras.dataNascimento || "",
+        data_nascimento: extras.dataNascimento || "",
         dataPrimeiraHabilitacao: extras.dataPrimeiraHabilitacao || "",
+        primeira_habilitacao: extras.dataPrimeiraHabilitacao || "",
         validadeCnh: extras.validadeCnh || "",
         categoriaCnh: extras.categoriaCnh || "",
         docIdentidade: extras.docIdentidade || "",
@@ -135,6 +159,7 @@ async function enviarParaGoogleSheets(lead) {
         ufEmissor: extras.ufEmissor || "",
         dataEmissaoCnh: extras.dataEmissaoCnh || "",
         localEmissaoCnh: extras.localEmissaoCnh || "",
+        dadosCnhJson: JSON.stringify(extras),
         ultimaConsulta: lead.ultimaConsulta,
       }),
       redirect: "follow"
