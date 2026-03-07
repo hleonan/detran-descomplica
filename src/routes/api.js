@@ -106,6 +106,34 @@ function normalizeDateBR(value) {
   return text;
 }
 
+function normalizeOptionalText(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || null;
+}
+
+function normalizeCnhData(dados = {}) {
+  const cnhDigits = onlyDigits(dados.cnh || "");
+  return {
+    cpf: onlyDigits(dados.cpf || "") || null,
+    cnh: cnhDigits ? cnhDigits.slice(0, 11) : null,
+    nome: normalizeOptionalText(dados.nome),
+    dataNascimento: normalizeDateBR(dados.dataNascimento || "") || null,
+    dataPrimeiraHabilitacao: normalizeDateBR(dados.dataPrimeiraHabilitacao || "") || null,
+    validadeCnh: normalizeDateBR(dados.validadeCnh || "") || null,
+    categoriaCnh: normalizeOptionalText(dados.categoriaCnh || dados.categoria || ""),
+    docIdentidade: normalizeOptionalText(dados.docIdentidade || ""),
+    orgaoEmissor: normalizeOptionalText(dados.orgaoEmissor || ""),
+    ufEmissor: normalizeOptionalText(dados.ufEmissor || ""),
+    dataEmissaoCnh: normalizeDateBR(dados.dataEmissaoCnh || "") || null,
+    localEmissaoCnh: normalizeOptionalText(dados.localEmissaoCnh || ""),
+  };
+}
+
+function extrairDadosCnhDoTexto(texto = "") {
+  const extrator = new OCRExtractor(null);
+  return normalizeCnhData(extrator.extrairDadosDoTexto(String(texto || "")));
+}
+
 function certidaoConsultaKey(cpf, cnh) {
   return `${onlyDigits(cpf)}:${onlyDigits(cnh)}`;
 }
@@ -365,48 +393,6 @@ async function consultarProcessoComCache(
   return promise;
 }
 
-function extrairCpfCnhDoTexto(texto = "") {
-  const textoSeguro = String(texto || "");
-
-  const cpfMatch = textoSeguro.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/);
-  const cpf = cpfMatch ? cpfMatch[0].replace(/\D/g, "") : null;
-
-  let cnh = null;
-
-  const cnhComRotulo =
-    textoSeguro.match(/CNH[^0-9]{0,20}(\d{9,11})/i) ||
-    textoSeguro.match(/REGISTRO[^0-9]{0,20}(\d{9,11})/i);
-  if (cnhComRotulo?.[1]) cnh = onlyDigits(cnhComRotulo[1]).slice(0, 11);
-
-  if (!cnh) {
-    const candidatos11 = Array.from(textoSeguro.matchAll(/(?<!\d)\d{11}(?!\d)/g)).map((m) => m[0]);
-    if (candidatos11.length) {
-      cnh = candidatos11.find((num) => num !== cpf) || candidatos11[0];
-    }
-  }
-
-  const extrairDataPorRotulo = (rotuloRegex) => {
-    const linha = textoSeguro.match(new RegExp(`${rotuloRegex.source}[^\\n\\r\\d]{0,25}(\\d{2}[\\/\\-.]\\d{2}[\\/\\-.]\\d{4})`, "i"));
-    if (linha?.[1]) return normalizeDateBR(linha[1].replace(/[.-]/g, "/"));
-    return null;
-  };
-
-  const dataNascimento =
-    extrairDataPorRotulo(/DATA\\s+NASC(?:IMENTO)?/) ||
-    extrairDataPorRotulo(/NASCIMENTO/);
-
-  const dataPrimeiraHabilitacao =
-    extrairDataPorRotulo(/1\\s*[ªA]?\\s*HABILITA/) ||
-    extrairDataPorRotulo(/PRIMEIRA\\s+HABILITA/);
-
-  return {
-    cpf,
-    cnh: cnh || null,
-    dataNascimento: dataNascimento || null,
-    dataPrimeiraHabilitacao: dataPrimeiraHabilitacao || null,
-  };
-}
-
 // =========================
 // ROTA: Health Check
 // =========================
@@ -515,11 +501,8 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       return res.status(422).json({ error: result?.erro || "Falha na leitura da imagem." });
     }
 
-    const cpf = onlyDigits(result.dados?.cpf);
-    const cnh = onlyDigits(result.dados?.cnh);
-    const nome = result.dados?.nome || null;
-    const dataNascimento = normalizeDateBR(result.dados?.dataNascimento || "");
-    const dataPrimeiraHabilitacao = normalizeDateBR(result.dados?.dataPrimeiraHabilitacao || "");
+    const dadosCnh = normalizeCnhData(result.dados || {});
+    const { cpf, cnh, nome, ...dadosCnhExtras } = dadosCnh;
 
     // REGISTRAR LEAD (dados do OCR)
     if (cpf) {
@@ -529,16 +512,14 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
         nome,
         origem,
         status: "DESCONHECIDO",
+        dadosExtras: {
+          ...dadosCnhExtras,
+          fonteDadosCnh: "ocr_imagem",
+        },
       });
     }
 
-    return res.json({
-      cpf: cpf || null,
-      cnh: cnh || null,
-      nome,
-      dataNascimento: dataNascimento || null,
-      dataPrimeiraHabilitacao: dataPrimeiraHabilitacao || null,
-    });
+    return res.json(dadosCnh);
 
   } catch (err) {
     console.error("Erro /api/ocr-cnh:", err);
@@ -570,22 +551,28 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     const parsed = JSON.parse(buf.toString("utf8"));
     const text = parsed?.responses?.[0]?.fullTextAnnotation?.text || "";
 
-    const { cpf, cnh, dataNascimento, dataPrimeiraHabilitacao } = extrairCpfCnhDoTexto(text);
+    const dadosCnh = extrairDadosCnhDoTexto(text);
+    const { cpf, cnh, nome, ...dadosCnhExtras } = dadosCnh;
 
     job.status = "done";
-    job.result = { cpf, cnh, dataNascimento, dataPrimeiraHabilitacao };
+    job.result = dadosCnh;
 
     // REGISTRAR LEAD (dados do OCR PDF)
     if (cpf) {
       registrarLead({
         cpf,
         cnh,
+        nome,
         origem: job.origem || "upload",
         status: "DESCONHECIDO",
+        dadosExtras: {
+          ...dadosCnhExtras,
+          fonteDadosCnh: "ocr_pdf",
+        },
       });
     }
 
-    return res.json({ status: "done", cpf, cnh, dataNascimento, dataPrimeiraHabilitacao });
+    return res.json({ status: "done", ...dadosCnh });
 
   } catch (err) {
     return res.status(500).json({ status: "error", error: err.message });
@@ -624,6 +611,15 @@ router.post("/consultar-certidao", async (req, res) => {
     const cnhDigits = onlyDigits(cnh);
     const dataNascimentoBr = normalizeDateBR(dataNascimento);
     const dataPrimeiraHabilitacaoBr = normalizeDateBR(dataPrimeiraHabilitacao);
+    const dadosCnhRecebidos = normalizeCnhData({
+      ...(req.body || {}),
+      cpf: cpfDigits,
+      cnh: cnhDigits,
+      dataNascimento: dataNascimentoBr || req.body?.dataNascimento,
+      dataPrimeiraHabilitacao: dataPrimeiraHabilitacaoBr || req.body?.dataPrimeiraHabilitacao,
+    });
+    const { cpf: _cpfIgnorado, cnh: _cnhIgnorado, nome: nomeCnhRecebido, ...dadosCnhExtrasRecebidos } =
+      dadosCnhRecebidos;
     const consultaKey = certidaoConsultaKey(cpfDigits, cnhDigits);
 
     if (!cpfDigits || !cnhDigits) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
@@ -634,8 +630,13 @@ router.post("/consultar-certidao", async (req, res) => {
     registrarLead({
       cpf: cpfDigits,
       cnh: cnhDigits,
+      nome: nomeCnhRecebido || null,
       origem: origem || "manual",
       status: "DESCONHECIDO",
+      dadosExtras: {
+        ...dadosCnhExtrasRecebidos,
+        fonteDadosCnh: "consulta_certidao",
+      },
     });
 
     const cacheConsulta = certidaoConsultaCache.get(consultaKey);
@@ -690,7 +691,8 @@ router.post("/consultar-certidao", async (req, res) => {
       origem: origem || "manual",
       status: analise.status,
       motivo: analise.motivo,
-      extras: {
+      dadosExtras: {
+        ...dadosCnhExtrasRecebidos,
         numeroCertidao: analise.numeroCertidao || null,
         dataConsulta: new Date().toISOString(),
         temProblemas: analise.temProblemas,

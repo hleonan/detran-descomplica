@@ -9,24 +9,76 @@ const SHEET_URL = "https://script.google.com/macros/s/AKfycbzQ5n8Vi8SYLcVMMg43Oz
 const leadsMap = new Map();
 const LEADS_FILE = "/tmp/leads_database.json";
 
+function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeText(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || "";
+}
+
+function isMeaningfulValue(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") {
+    const text = normalizeText(value);
+    if (!text) return false;
+    const upper = text.toUpperCase();
+    return !["DESCONHECIDO", "NAO IDENTIFICADO", "NÃO IDENTIFICADO", "-"].includes(upper);
+  }
+  return true;
+}
+
+function pickValue(newValue, previousValue, fallback = "") {
+  if (isMeaningfulValue(newValue)) return typeof newValue === "string" ? normalizeText(newValue) : newValue;
+  if (isMeaningfulValue(previousValue)) {
+    return typeof previousValue === "string" ? normalizeText(previousValue) : previousValue;
+  }
+  return fallback;
+}
+
+function normalizeExtras(extras = {}) {
+  const payload = {};
+  for (const [key, value] of Object.entries(extras || {})) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string") {
+      const text = normalizeText(value);
+      if (!text) continue;
+      payload[key] = text;
+      continue;
+    }
+    payload[key] = value;
+  }
+  return payload;
+}
+
 /**
  * Função principal: Salva o Lead (Memória + Arquivo + Google Sheets)
  */
 export async function registrarLead(dados) {
   try {
+    const cpf = onlyDigits(dados.cpf || "");
+    const cnh = onlyDigits(dados.cnh || "");
+    const chaveLead = cpf || `cnh_${cnh || "desconhecida"}`;
+    const leadAnterior = leadsMap.get(chaveLead) || null;
+    const dadosExtrasEntrada = normalizeExtras(dados.dadosExtras || dados.extras || {});
+
     const lead = {
-      cpf: dados.cpf || "Desconhecido",
-      cnh: dados.cnh || "Desconhecido",
-      nome: dados.nome || "Não identificado",
-      status: dados.status || "DESCONHECIDO", // OK ou RESTRICAO
-      motivo: dados.motivo || "",
-      origem: dados.origem || "manual", // manual, upload, camera
-      dadosExtras: dados.dadosExtras || {},
+      cpf: pickValue(cpf, leadAnterior?.cpf, "Desconhecido"),
+      cnh: pickValue(cnh, leadAnterior?.cnh, "Desconhecido"),
+      nome: pickValue(dados.nome, leadAnterior?.nome, "Não identificado"),
+      status: pickValue(dados.status, leadAnterior?.status, "DESCONHECIDO"), // OK ou RESTRICAO
+      motivo: pickValue(dados.motivo, leadAnterior?.motivo, ""),
+      origem: pickValue(dados.origem, leadAnterior?.origem, "manual"), // manual, upload, camera
+      dadosExtras: {
+        ...(leadAnterior?.dadosExtras || {}),
+        ...dadosExtrasEntrada,
+      },
       ultimaConsulta: new Date().toISOString(),
     };
 
     // 1. Salva na Memória RAM (Sempre atualiza)
-    leadsMap.set(lead.cpf, lead);
+    leadsMap.set(chaveLead, lead);
 
     // 2. Salva no Arquivo Temporário (Sempre atualiza)
     salvarLeadsNoArquivo();
@@ -62,15 +114,28 @@ async function enviarParaGoogleSheets(lead) {
   }
 
   try {
+    const extras = lead.dadosExtras || {};
     await fetch(SHEET_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         cpf: lead.cpf,
         cnh: lead.cnh,
+        nome: lead.nome,
+        nomeCompleto: lead.nome,
         status: lead.status, // Agora só vai chegar "OK", "RESTRICAO" ou "ERRO"
         motivo: lead.motivo,
-        origem: lead.origem
+        origem: lead.origem,
+        dataNascimento: extras.dataNascimento || "",
+        dataPrimeiraHabilitacao: extras.dataPrimeiraHabilitacao || "",
+        validadeCnh: extras.validadeCnh || "",
+        categoriaCnh: extras.categoriaCnh || "",
+        docIdentidade: extras.docIdentidade || "",
+        orgaoEmissor: extras.orgaoEmissor || "",
+        ufEmissor: extras.ufEmissor || "",
+        dataEmissaoCnh: extras.dataEmissaoCnh || "",
+        localEmissaoCnh: extras.localEmissaoCnh || "",
+        ultimaConsulta: lead.ultimaConsulta,
       }),
       redirect: "follow"
     });
@@ -93,7 +158,9 @@ function salvarLeadsNoArquivo() {
 
 export function buscarLead(cpf) {
   if (!cpf) return null;
-  return leadsMap.get(cpf.replace(/\D/g, "")) || null;
+  const cpfDigits = onlyDigits(cpf);
+  if (cpfDigits && leadsMap.has(cpfDigits)) return leadsMap.get(cpfDigits) || null;
+  return Array.from(leadsMap.values()).find((lead) => onlyDigits(lead?.cpf) === cpfDigits) || null;
 }
 
 export function listarLeads() {

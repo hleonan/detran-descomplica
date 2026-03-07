@@ -91,24 +91,65 @@ class OCRExtractor {
         nome: null,
         dataNascimento: null,
         dataPrimeiraHabilitacao: null,
+        validadeCnh: null,
+        categoriaCnh: null,
+        docIdentidade: null,
+        orgaoEmissor: null,
+        ufEmissor: null,
+        dataEmissaoCnh: null,
+        localEmissaoCnh: null,
       };
     }
 
+    const textoSeguro = String(texto || "").replace(/\r/g, "\n");
+    const linhas = textoSeguro
+      .split(/\n+/)
+      .map((linha) => linha.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+
+    const limparCampo = (valor) => {
+      const textoValor = String(valor || "").replace(/\s+/g, " ").trim();
+      return textoValor || null;
+    };
+
+    const extrairComRegex = (regexes = []) => {
+      for (const regex of regexes) {
+        const match = textoSeguro.match(regex);
+        if (match?.[1]) {
+          const valor = limparCampo(match[1]);
+          if (valor) return valor;
+        }
+      }
+      return null;
+    };
+
+    const extrairDataPorRotulos = (rotulos = []) => {
+      for (const rotuloRegex of rotulos) {
+        const regex = new RegExp(
+          `${rotuloRegex.source}[^\\n\\r\\d]{0,25}(\\d{2}[\\/\\-.]\\d{2}[\\/\\-.]\\d{4})`,
+          "i"
+        );
+        const match = textoSeguro.match(regex);
+        if (match?.[1]) return normalizarData(match[1]);
+      }
+      return null;
+    };
+
     // Extrair CPF (padrão: XXX.XXX.XXX-XX ou XXXXXXXXXXX)
-    const cpfMatch = texto.match(/(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
+    const cpfMatch = textoSeguro.match(/(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
     const cpf = cpfMatch ? this.normalizarCPF(cpfMatch[1]) : null;
 
     // Extrair CNH - múltiplas estratégias
     let cnh = null;
     
     // Estratégia 1: Procura "Registro" ou "CNH" seguido de números
-    const cnhMatch1 = texto.match(/(?:Registro|N[°º]?\s*Registro|CNH)[:\s]*(\d{9,12})/i);
+    const cnhMatch1 = textoSeguro.match(/(?:N[°ºo]?\s*Registro|Registro|N[°ºo]?\s*CNH|CNH|Numero\s*CNH)[:\s]*(\d{9,12})/i);
     if (cnhMatch1) cnh = cnhMatch1[1];
     
     // Estratégia 2: Procura números de 11 dígitos que não sejam CPF
     if (!cnh) {
       const cpfDigits = cpf ? cpf.replace(/\D/g, '') : '';
-      const allNumbers = texto.match(/\b\d{11}\b/g) || [];
+      const allNumbers = textoSeguro.match(/\b\d{11}\b/g) || [];
       for (const num of allNumbers) {
         if (num !== cpfDigits) {
           cnh = num;
@@ -119,13 +160,27 @@ class OCRExtractor {
 
     // Estratégia 3: Procura sequência de 9-12 dígitos após "Registro"
     if (!cnh) {
-      const cnhMatch3 = texto.match(/(\d{9,12})\s*(?:CNH|Registro)/i);
+      const cnhMatch3 = textoSeguro.match(/(\d{9,12})\s*(?:CNH|Registro)/i);
       if (cnhMatch3) cnh = cnhMatch3[1];
     }
 
-    // Extrair nome
-    const nomeMatch = texto.match(/Nome[:\s]*([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇa-záéíóúâêîôûãõç\s]+)/i);
-    const nome = nomeMatch ? nomeMatch[1].trim() : null;
+    // Extrair nome (CNH antiga e nova)
+    let nome = extrairComRegex([
+      /\bNOME\b[:\s]*([A-ZÀ-Ú][A-ZÀ-Ú'\- ]{4,}?)(?=\s{2,}|DOC\.?\s*IDENT|CPF|DATA\s*NASC|FILIA|PERMISSAO|VALIDADE|CAT\.?\s*HAB|N[°ºo]?\s*REGISTRO|$)/i,
+    ]);
+
+    if (!nome) {
+      const idxNome = linhas.findIndex((linha) => /^NOME\b/i.test(linha));
+      if (idxNome >= 0) {
+        const linhaNome = linhas[idxNome].replace(/^NOME[:\s]*/i, "").trim();
+        if (linhaNome && !/^(DOC|CPF|DATA|FILIA|REGISTRO|N[°ºo])/i.test(linhaNome)) {
+          nome = linhaNome;
+        } else {
+          const proximaLinha = linhas[idxNome + 1] || "";
+          if (/^[A-ZÀ-Ú][A-ZÀ-Ú'\- ]{4,}$/i.test(proximaLinha)) nome = proximaLinha;
+        }
+      }
+    }
 
     const normalizarData = (valor) => {
       const textoData = String(valor || '').trim();
@@ -135,26 +190,92 @@ class OCRExtractor {
       return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
     };
 
-    const extrairDataPorRotulo = (regexRotulo) => {
-      const match = texto.match(new RegExp(`${regexRotulo.source}[^\\n\\r\\d]{0,25}(\\d{2}[\\/\\-.]\\d{2}[\\/\\-.]\\d{4})`, 'i'));
-      if (match?.[1]) return normalizarData(match[1]);
-      return null;
-    };
+    const dataNascimento = extrairDataPorRotulos([
+      /DATA\s+NASC(?:IMENTO)?/,
+      /NASCIMENTO/,
+    ]);
 
-    const dataNascimento =
-      extrairDataPorRotulo(/DATA\s+NASC(?:IMENTO)?/) ||
-      extrairDataPorRotulo(/NASCIMENTO/);
+    const dataPrimeiraHabilitacao = extrairDataPorRotulos([
+      /1\s*[ªA]?\s*HABILITA/,
+      /PRIMEIRA\s+HABILITA/,
+    ]);
 
-    const dataPrimeiraHabilitacao =
-      extrairDataPorRotulo(/1\s*[ªA]?\s*HABILITA/) ||
-      extrairDataPorRotulo(/PRIMEIRA\s+HABILITA/);
+    const validadeCnh = extrairDataPorRotulos([/VALIDADE/]);
+    const dataEmissaoCnh = extrairDataPorRotulos([/DATA\s+EMISS[ÃA]O/, /EMISS[ÃA]O/]);
+
+    let categoriaCnh = extrairComRegex([
+      /CAT\.?\s*HAB\.?[:\s]*([A-Z]{1,3})/i,
+      /CATEGORIA[:\s]*([A-Z]{1,3})/i,
+    ]);
+    if (categoriaCnh) categoriaCnh = categoriaCnh.toUpperCase();
+
+    let docIdentidade = extrairComRegex([
+      /DOC\.?\s*IDENTIDADE[^:\n\r]*[:\s]*([A-Z0-9.\-\/ ]{5,})/i,
+      /DOC\.?\s*IDENT[^:\n\r]*[:\s]*([A-Z0-9.\-\/ ]{5,})/i,
+    ]);
+
+    if (!docIdentidade) {
+      const idxDoc = linhas.findIndex((linha) => /DOC\.?\s*IDENT/i.test(linha));
+      if (idxDoc >= 0) {
+        const linhaDoc = linhas[idxDoc].replace(/^.*DOC\.?\s*IDENTIDADE[^:]*[:\s]*/i, "").trim();
+        if (linhaDoc && linhaDoc.length >= 5) {
+          docIdentidade = linhaDoc;
+        } else {
+          const proximaLinha = linhas[idxDoc + 1] || "";
+          if (/^[A-Z0-9.\-\/ ]{5,}$/i.test(proximaLinha)) docIdentidade = proximaLinha;
+        }
+      }
+    }
+
+    let localEmissaoCnh = extrairComRegex([
+      /\bLOCAL\b[:\s]*([A-ZÀ-Ú0-9,\-\.\/ ]{3,})/i,
+    ]);
+
+    if (!localEmissaoCnh) {
+      const idxLocal = linhas.findIndex((linha) => /^LOCAL\b/i.test(linha));
+      if (idxLocal >= 0) {
+        const linhaLocal = linhas[idxLocal].replace(/^LOCAL[:\s]*/i, "").trim();
+        if (linhaLocal && linhaLocal.length >= 3) {
+          localEmissaoCnh = linhaLocal;
+        } else {
+          const proximaLinha = linhas[idxLocal + 1] || "";
+          if (/^[A-ZÀ-Ú0-9,\-\.\/ ]{3,}$/i.test(proximaLinha)) localEmissaoCnh = proximaLinha;
+        }
+      }
+    }
+
+    let orgaoEmissor = null;
+    let ufEmissor = null;
+
+    if (docIdentidade) {
+      const docSemEspaco = docIdentidade.replace(/\s+/g, "");
+      const ufMatch = docIdentidade.match(/([A-Z]{2})$/i) || docSemEspaco.match(/([A-Z]{2})$/i);
+      if (ufMatch?.[1]) ufEmissor = ufMatch[1].toUpperCase();
+
+      const orgaoComBarra = docIdentidade.match(/(?:\/|-)\s*([A-Z]{2,12})\s*(?:\/|-)\s*[A-Z]{2}$/i);
+      if (orgaoComBarra?.[1]) orgaoEmissor = orgaoComBarra[1].toUpperCase();
+
+      if (!orgaoEmissor && ufEmissor && docSemEspaco.length > 4) {
+        const letrasFinais = docSemEspaco.match(/([A-Z]{4,})$/i)?.[1] || null;
+        if (letrasFinais && letrasFinais.endsWith(ufEmissor) && letrasFinais.length > 2) {
+          orgaoEmissor = letrasFinais.slice(0, -2).toUpperCase() || null;
+        }
+      }
+    }
 
     return {
       cpf: cpf,
       cnh: cnh,
-      nome: nome,
+      nome: limparCampo(nome),
       dataNascimento,
-      dataPrimeiraHabilitacao
+      dataPrimeiraHabilitacao,
+      validadeCnh,
+      categoriaCnh: categoriaCnh || null,
+      docIdentidade: limparCampo(docIdentidade),
+      orgaoEmissor: limparCampo(orgaoEmissor),
+      ufEmissor: limparCampo(ufEmissor),
+      dataEmissaoCnh,
+      localEmissaoCnh: limparCampo(localEmissaoCnh),
     };
   }
 

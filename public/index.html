@@ -1664,11 +1664,21 @@
             dataPrimeiraField.classList.add("filled-by-ocr");
           }
         }
+
+        if (cpf || cnh) {
+          salvarIdentidadeConsulta(cpf, cnh, dados);
+        }
       }
 
       const IDENTIDADE_CONSULTA_KEY = "__ultimaConsultaIdentidade";
+      const IDENTIDADE_CONSULTA_TTL_MS = 60 * 60 * 1000;
 
       function salvarIdentidadeConsulta(cpf, cnh, extras = {}) {
+        const textoOpcional = (valor) => {
+          const t = String(valor || "").replace(/\s+/g, " ").trim();
+          return t || null;
+        };
+
         const dataNascimentoValor = normalizeDateBR(
           extras?.dataNascimento || document.getElementById("dataNascimento")?.value || ""
         );
@@ -1681,6 +1691,14 @@
           cnh: sanitizeCNH(cnh),
           dataNascimento: dataNascimentoValor || null,
           dataPrimeiraHabilitacao: dataPrimeiraHabilitacaoValor || null,
+          nome: textoOpcional(extras?.nome || extras?.nomeCompleto),
+          validadeCnh: normalizeDateBR(extras?.validadeCnh || "") || null,
+          categoriaCnh: textoOpcional(extras?.categoriaCnh),
+          docIdentidade: textoOpcional(extras?.docIdentidade),
+          orgaoEmissor: textoOpcional(extras?.orgaoEmissor),
+          ufEmissor: textoOpcional(extras?.ufEmissor),
+          dataEmissaoCnh: normalizeDateBR(extras?.dataEmissaoCnh || "") || null,
+          localEmissaoCnh: textoOpcional(extras?.localEmissaoCnh),
           createdAt: Date.now(),
         };
 
@@ -1690,6 +1708,14 @@
         window.__lastConsultaCnh = payload.cnh;
         window.__lastConsultaDataNascimento = payload.dataNascimento;
         window.__lastConsultaDataPrimeiraHabilitacao = payload.dataPrimeiraHabilitacao;
+        window.__lastConsultaNome = payload.nome;
+        window.__lastConsultaValidadeCnh = payload.validadeCnh;
+        window.__lastConsultaCategoriaCnh = payload.categoriaCnh;
+        window.__lastConsultaDocIdentidade = payload.docIdentidade;
+        window.__lastConsultaOrgaoEmissor = payload.orgaoEmissor;
+        window.__lastConsultaUfEmissor = payload.ufEmissor;
+        window.__lastConsultaDataEmissaoCnh = payload.dataEmissaoCnh;
+        window.__lastConsultaLocalEmissaoCnh = payload.localEmissaoCnh;
         window.__lastConsultaCreatedAt = payload.createdAt;
 
         try {
@@ -1698,12 +1724,26 @@
       }
 
       function recuperarIdentidadeConsulta() {
-        if (window.__lastConsultaCpf && window.__lastConsultaCnh) {
+        const memoriaValida =
+          window.__lastConsultaCpf &&
+          window.__lastConsultaCnh &&
+          window.__lastConsultaCreatedAt &&
+          Date.now() - window.__lastConsultaCreatedAt <= IDENTIDADE_CONSULTA_TTL_MS;
+
+        if (memoriaValida) {
           return {
             cpf: window.__lastConsultaCpf,
             cnh: window.__lastConsultaCnh,
             dataNascimento: window.__lastConsultaDataNascimento || null,
             dataPrimeiraHabilitacao: window.__lastConsultaDataPrimeiraHabilitacao || null,
+            nome: window.__lastConsultaNome || null,
+            validadeCnh: window.__lastConsultaValidadeCnh || null,
+            categoriaCnh: window.__lastConsultaCategoriaCnh || null,
+            docIdentidade: window.__lastConsultaDocIdentidade || null,
+            orgaoEmissor: window.__lastConsultaOrgaoEmissor || null,
+            ufEmissor: window.__lastConsultaUfEmissor || null,
+            dataEmissaoCnh: window.__lastConsultaDataEmissaoCnh || null,
+            localEmissaoCnh: window.__lastConsultaLocalEmissaoCnh || null,
           };
         }
 
@@ -1712,17 +1752,37 @@
           if (!raw) return null;
           const parsed = JSON.parse(raw);
           if (!parsed?.cpf || !parsed?.cnh) return null;
+          if (!parsed?.createdAt || Date.now() - Number(parsed.createdAt) > IDENTIDADE_CONSULTA_TTL_MS) {
+            localStorage.removeItem(IDENTIDADE_CONSULTA_KEY);
+            return null;
+          }
 
           window.__lastConsultaCpf = onlyDigits(parsed.cpf);
           window.__lastConsultaCnh = sanitizeCNH(parsed.cnh);
           window.__lastConsultaDataNascimento = normalizeDateBR(parsed.dataNascimento || "") || null;
           window.__lastConsultaDataPrimeiraHabilitacao = normalizeDateBR(parsed.dataPrimeiraHabilitacao || "") || null;
+          window.__lastConsultaNome = String(parsed.nome || "").trim() || null;
+          window.__lastConsultaValidadeCnh = normalizeDateBR(parsed.validadeCnh || "") || null;
+          window.__lastConsultaCategoriaCnh = String(parsed.categoriaCnh || "").trim() || null;
+          window.__lastConsultaDocIdentidade = String(parsed.docIdentidade || "").trim() || null;
+          window.__lastConsultaOrgaoEmissor = String(parsed.orgaoEmissor || "").trim() || null;
+          window.__lastConsultaUfEmissor = String(parsed.ufEmissor || "").trim() || null;
+          window.__lastConsultaDataEmissaoCnh = normalizeDateBR(parsed.dataEmissaoCnh || "") || null;
+          window.__lastConsultaLocalEmissaoCnh = String(parsed.localEmissaoCnh || "").trim() || null;
           window.__lastConsultaCreatedAt = parsed.createdAt || Date.now();
           return {
             cpf: window.__lastConsultaCpf,
             cnh: window.__lastConsultaCnh,
             dataNascimento: window.__lastConsultaDataNascimento,
             dataPrimeiraHabilitacao: window.__lastConsultaDataPrimeiraHabilitacao,
+            nome: window.__lastConsultaNome,
+            validadeCnh: window.__lastConsultaValidadeCnh,
+            categoriaCnh: window.__lastConsultaCategoriaCnh,
+            docIdentidade: window.__lastConsultaDocIdentidade,
+            orgaoEmissor: window.__lastConsultaOrgaoEmissor,
+            ufEmissor: window.__lastConsultaUfEmissor,
+            dataEmissaoCnh: window.__lastConsultaDataEmissaoCnh,
+            localEmissaoCnh: window.__lastConsultaLocalEmissaoCnh,
           };
         } catch (err) {
           return null;
@@ -1938,12 +1998,19 @@
         const cnhField = document.getElementById("cnh");
         const dataNascimentoField = document.getElementById("dataNascimento");
         const dataPrimeiraField = document.getElementById("dataPrimeiraHabilitacao");
+        const identidadeSalva = recuperarIdentidadeConsulta();
         const cpf = cpfField.value;
         const cnh = cnhField.value;
         const cpfDigits = onlyDigits(cpf);
         const cnhDigits = sanitizeCNH(cnh);
         const dataNascimento = normalizeDateBR(dataNascimentoField?.value || "");
         const dataPrimeiraHabilitacao = normalizeDateBR(dataPrimeiraField?.value || "");
+        const identidadeCompativel =
+          identidadeSalva &&
+          onlyDigits(identidadeSalva.cpf || "") === cpfDigits &&
+          sanitizeCNH(identidadeSalva.cnh || "") === cnhDigits
+            ? identidadeSalva
+            : null;
        
         if (!validarCPF(cpf)) { stopSmartLoading(); return alert("CPF inválido!"); }
         if (cnhDigits.length < 9) { stopSmartLoading(); return alert("CNH inválida!"); }
@@ -1970,6 +2037,14 @@
                 origem: origemDados,
                 dataNascimento,
                 dataPrimeiraHabilitacao,
+                nome: identidadeCompativel?.nome || null,
+                validadeCnh: identidadeCompativel?.validadeCnh || null,
+                categoriaCnh: identidadeCompativel?.categoriaCnh || null,
+                docIdentidade: identidadeCompativel?.docIdentidade || null,
+                orgaoEmissor: identidadeCompativel?.orgaoEmissor || null,
+                ufEmissor: identidadeCompativel?.ufEmissor || null,
+                dataEmissaoCnh: identidadeCompativel?.dataEmissaoCnh || null,
+                localEmissaoCnh: identidadeCompativel?.localEmissaoCnh || null,
               }),
             });
 
@@ -2077,6 +2152,8 @@
             nome: data.nome || null,
           });
           salvarIdentidadeConsulta(cpfDigits, cnhDigits, {
+            ...(identidadeCompativel || {}),
+            nome: data.nome || identidadeCompativel?.nome || null,
             dataNascimento,
             dataPrimeiraHabilitacao,
           });
