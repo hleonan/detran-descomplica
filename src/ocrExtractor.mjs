@@ -211,10 +211,25 @@ class OCRExtractor {
       ].some((regex) => regex.test(nomeNorm));
     };
 
+    const nomePlaceholder = (valor) => {
+      const nomeNorm = normalizarComparacao(valor);
+      if (!nomeNorm) return true;
+      return [
+        /^E SOBRENOME$/,
+        /^NOME E SOBRENOME$/,
+        /^SEU NOME$/,
+        /^DIGITE SEU NOME$/,
+        /^NOME COMPLETO$/,
+        /^NAO IDENTIFICADO$/,
+        /^DESCONHECIDO$/,
+      ].some((regex) => regex.test(nomeNorm));
+    };
+
     const nomeEhValido = (valor) => {
       const nomeLimpo = limparCampo(valor);
       if (!nomeLimpo) return false;
       if (nomePareceCabecalho(nomeLimpo)) return false;
+      if (nomePlaceholder(nomeLimpo)) return false;
       return /^[A-ZÀ-Ú][A-ZÀ-Ú'´`^~\- ]{5,}$/i.test(nomeLimpo) && nomeLimpo.split(/\s+/).length >= 2;
     };
 
@@ -297,10 +312,10 @@ class OCRExtractor {
     let nome = extrairNomePorLinhas();
     if (!nome) nome = extrairNomeAntesDoCpf();
     if (!nome) {
-      nome = extrairComRegex([
-      /\bNOME\b[:\s]*([A-ZÀ-Ú][A-ZÀ-Ú'\- ]{4,}?)(?=\s{2,}|DOC\.?\s*IDENT|CPF|DATA\s*NASC|FILIA|PERMISSAO|VALIDADE|CAT\.?\s*HAB|N[°ºo]?\s*REGISTRO|$)/i,
+      const nomeRegex = extrairComRegex([
+        /\bNOME\b[:\s]*([A-ZÀ-Ú][A-ZÀ-Ú'\- ]{4,}?)(?=\s{2,}|DOC\.?\s*IDENT|CPF|DATA\s*NASC|FILIA|PERMISSAO|VALIDADE|CAT\.?\s*HAB|N[°ºo]?\s*REGISTRO|$)/i,
       ]);
-      if (nomePareceCabecalho(nome)) nome = null;
+      nome = nomeEhValido(nomeRegex) ? nomeRegex : null;
     }
 
     if (!nome) {
@@ -413,14 +428,18 @@ class OCRExtractor {
       return candidatas[0]?.d || null;
     };
 
-    const guessPrimeiraHab = (nasc) => {
+    const guessPrimeiraHab = (nasc, validade) => {
       const nascDt = parseDate(nasc);
+      const validadeDt = parseDate(validade);
       const now = new Date();
       const candidatas = todasDatas
         .map((d) => ({ d, dt: parseDate(d) }))
         .filter((x) => x.dt && x.dt <= now)
         .sort((a, b) => a.dt - b.dt);
       for (const c of candidatas) {
+        if (!nascDt && !validadeDt) return c.d;
+        if (nascDt && c.dt < nascDt) continue;
+        if (validadeDt && c.dt > validadeDt) continue;
         if (!nascDt) return c.d;
         const idade = c.dt.getUTCFullYear() - nascDt.getUTCFullYear();
         if (idade >= 14) return c.d;
@@ -465,7 +484,7 @@ class OCRExtractor {
     }
 
     const dataNascimentoFinal = dataNascimento || dadosNascimentoFallback;
-    const dataNascimentoComFallback = dataNascimentoFinal || guessNascimento();
+    let dataNascimentoComFallback = dataNascimentoFinal || guessNascimento();
 
     let dataPrimeiraHabilitacaoFinal = dataPrimeiraHabilitacao;
     if (!dataPrimeiraHabilitacaoFinal) {
@@ -480,10 +499,6 @@ class OCRExtractor {
         }
       }
     }
-    if (!dataPrimeiraHabilitacaoFinal) {
-      dataPrimeiraHabilitacaoFinal = guessPrimeiraHab(dataNascimentoComFallback);
-    }
-
     let validadeCnhFinal = validadeCnh;
     if (!validadeCnhFinal) {
       const idxValidade = linhasNormalizadas.findIndex((linhaNorm) => /VALIDADE/.test(linhaNorm));
@@ -499,6 +514,88 @@ class OCRExtractor {
     }
     if (!validadeCnhFinal) {
       validadeCnhFinal = guessValidade();
+    }
+
+    if (!dataPrimeiraHabilitacaoFinal) {
+      dataPrimeiraHabilitacaoFinal = guessPrimeiraHab(dataNascimentoComFallback, validadeCnhFinal);
+    }
+
+    const ordenarDatas = (lista = []) =>
+      lista
+        .map((d) => ({ d, dt: parseDate(d) }))
+        .filter((x) => x.dt)
+        .sort((a, b) => a.dt - b.dt);
+
+    const datasOrdenadas = ordenarDatas(todasDatas);
+
+    // Reforço de consistência:
+    // 1) Nascimento deve ser a mais antiga.
+    // 2) 1ª habilitação deve ficar entre nascimento e validade.
+    // 3) Validade deve ser a mais recente.
+    if (!dataNascimentoComFallback && datasOrdenadas.length) {
+      dataNascimentoComFallback = datasOrdenadas[0].d;
+    }
+    if (!validadeCnhFinal && datasOrdenadas.length) {
+      validadeCnhFinal = datasOrdenadas[datasOrdenadas.length - 1].d;
+    }
+
+    let nascDt = parseDate(dataNascimentoComFallback);
+    let validadeDt = parseDate(validadeCnhFinal);
+
+    if (nascDt && validadeDt && nascDt > validadeDt) {
+      const temp = dataNascimentoComFallback;
+      dataNascimentoComFallback = validadeCnhFinal;
+      validadeCnhFinal = temp;
+      nascDt = parseDate(dataNascimentoComFallback);
+      validadeDt = parseDate(validadeCnhFinal);
+    }
+
+    const datasNoIntervalo = datasOrdenadas.filter((x) => {
+      if (nascDt && x.dt < nascDt) return false;
+      if (validadeDt && x.dt > validadeDt) return false;
+      return true;
+    });
+
+    const datasIntermediarias = datasNoIntervalo.filter(
+      (x) => x.d !== dataNascimentoComFallback && x.d !== validadeCnhFinal
+    );
+
+    let primeiraHabDt = parseDate(dataPrimeiraHabilitacaoFinal);
+    const primeiraHabForaDeIntervalo =
+      (primeiraHabDt && nascDt && primeiraHabDt < nascDt) ||
+      (primeiraHabDt && validadeDt && primeiraHabDt > validadeDt);
+
+    if (!dataPrimeiraHabilitacaoFinal || primeiraHabForaDeIntervalo) {
+      dataPrimeiraHabilitacaoFinal =
+        datasIntermediarias[0]?.d ||
+        datasNoIntervalo.find((x) => x.d !== dataNascimentoComFallback)?.d ||
+        dataPrimeiraHabilitacaoFinal;
+      primeiraHabDt = parseDate(dataPrimeiraHabilitacaoFinal);
+    }
+
+    if (
+      dataPrimeiraHabilitacaoFinal &&
+      dataNascimentoComFallback &&
+      dataPrimeiraHabilitacaoFinal === dataNascimentoComFallback &&
+      datasIntermediarias.length
+    ) {
+      dataPrimeiraHabilitacaoFinal = datasIntermediarias[0].d;
+      primeiraHabDt = parseDate(dataPrimeiraHabilitacaoFinal);
+    }
+
+    if (
+      dataPrimeiraHabilitacaoFinal &&
+      validadeCnhFinal &&
+      dataPrimeiraHabilitacaoFinal === validadeCnhFinal &&
+      datasIntermediarias.length
+    ) {
+      dataPrimeiraHabilitacaoFinal = datasIntermediarias[0].d;
+      primeiraHabDt = parseDate(dataPrimeiraHabilitacaoFinal);
+    }
+
+    if (primeiraHabDt && validadeDt && primeiraHabDt > validadeDt) {
+      const melhorPrimeira = datasIntermediarias.find((x) => !validadeDt || x.dt <= validadeDt);
+      if (melhorPrimeira?.d) dataPrimeiraHabilitacaoFinal = melhorPrimeira.d;
     }
 
     let dataEmissaoCnhFinal = dataEmissaoCnh;

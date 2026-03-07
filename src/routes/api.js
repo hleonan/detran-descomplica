@@ -56,6 +56,7 @@ try {
 const ocrJobStore = new Map();
 const OCR_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_OCR_BUCKET = "detran-descomplica-ocr";
+const OCR_TMP_DIR = "/tmp/ocr-cnh-results";
 const multasCacheStore = new Map();
 const multasInFlight = new Map();
 const MULTAS_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -71,10 +72,73 @@ function cleanupOCRJobs() {
   for (const [jobId, job] of ocrJobStore.entries()) {
     if (!job?.createdAt || now - job.createdAt > OCR_TTL_MS) ocrJobStore.delete(jobId);
   }
+
+  try {
+    if (!fs.existsSync(OCR_TMP_DIR)) return;
+    const arquivos = fs.readdirSync(OCR_TMP_DIR);
+    for (const arquivo of arquivos) {
+      if (!arquivo.endsWith(".json")) continue;
+      const caminho = path.join(OCR_TMP_DIR, arquivo);
+      const stat = fs.statSync(caminho);
+      if (!stat?.mtimeMs || now - stat.mtimeMs > OCR_TTL_MS) {
+        fs.unlinkSync(caminho);
+      }
+    }
+  } catch (err) {
+    console.warn("[OCR TMP] Falha ao limpar temporários:", err?.message || err);
+  }
 }
 
 function newJobId() {
   return `ocr_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function ocrTmpFilePath(jobId = "") {
+  const safeJobId = String(jobId || "").replace(/[^a-zA-Z0-9_.-]/g, "");
+  return path.join(OCR_TMP_DIR, `${safeJobId}.json`);
+}
+
+function saveOcrTempResult(jobId, payload = {}) {
+  if (!jobId) return;
+  try {
+    fs.mkdirSync(OCR_TMP_DIR, { recursive: true });
+    fs.writeFileSync(
+      ocrTmpFilePath(jobId),
+      JSON.stringify(
+        {
+          status: "done",
+          createdAt: Date.now(),
+          ...payload,
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  } catch (err) {
+    console.warn("[OCR TMP] Falha ao salvar cache:", err?.message || err);
+  }
+}
+
+function getOcrTempResult(jobId) {
+  if (!jobId) return null;
+  try {
+    const filePath = ocrTmpFilePath(jobId);
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf8");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.createdAt || Date.now() - parsed.createdAt > OCR_TTL_MS) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    console.warn("[OCR TMP] Falha ao carregar cache:", err?.message || err);
+    return null;
+  }
 }
 
 function getOcrBucketName() {
@@ -111,12 +175,134 @@ function normalizeOptionalText(value) {
   return text || null;
 }
 
+function normalizeNameForCompare(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMeaningfulName(value = "") {
+  const normalized = normalizeNameForCompare(value);
+  if (!normalized) return false;
+  if (normalized.split(" ").length < 2) return false;
+  if (/^(NOME|E SOBRENOME|DESCONHECIDO|NAO IDENTIFICADO|NAO INFORMADO)$/.test(normalized)) return false;
+  return normalized.length >= 8;
+}
+
+function namesAreCompatible(expectedName = "", certidaoName = "") {
+  const expectedNorm = normalizeNameForCompare(expectedName);
+  const certidaoNorm = normalizeNameForCompare(certidaoName);
+  if (!expectedNorm || !certidaoNorm) return true;
+  if (expectedNorm === certidaoNorm) return true;
+  if (expectedNorm.includes(certidaoNorm) || certidaoNorm.includes(expectedNorm)) return true;
+
+  const expectedTokens = new Set(
+    expectedNorm
+      .split(" ")
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 3)
+  );
+  const certidaoTokens = new Set(
+    certidaoNorm
+      .split(" ")
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 3)
+  );
+
+  if (!expectedTokens.size || !certidaoTokens.size) return true;
+
+  let intersection = 0;
+  for (const token of expectedTokens) {
+    if (certidaoTokens.has(token)) intersection += 1;
+  }
+
+  const overlapExpected = intersection / expectedTokens.size;
+  const overlapCertidao = intersection / certidaoTokens.size;
+  return overlapExpected >= 0.6 || overlapCertidao >= 0.6;
+}
+
+function normalizeCnhDigits(value = "") {
+  const digits = onlyDigits(value || "");
+  if (!digits) return null;
+  if (digits.length >= 9 && digits.length <= 11) return digits;
+
+  if (digits.length > 11) {
+    const windows = [];
+    for (let i = 0; i <= digits.length - 11; i += 1) {
+      windows.push(digits.slice(i, i + 11));
+    }
+
+    if (windows.length) {
+      const scored = windows
+        .map((windowValue, idx) => {
+          let score = 0;
+          if (/^0/.test(windowValue)) score += 2;
+          if (!/^(\d)\1+$/.test(windowValue)) score += 2;
+          if (!/(\d)\1{6,}/.test(windowValue)) score += 1;
+          if (idx === 0 || idx === windows.length - 1) score += 1;
+          return { windowValue, score, idx };
+        })
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return a.idx - b.idx;
+        });
+      return scored[0]?.windowValue || digits.slice(-11);
+    }
+    return digits.slice(-11);
+  }
+
+  return digits;
+}
+
+function buildCnhCandidatesForConsulta(cnhDigits = "") {
+  const base = normalizeCnhDigits(cnhDigits || "");
+  if (!base) return [];
+
+  const set = new Set();
+  const addCandidate = (value) => {
+    const normalized = normalizeCnhDigits(value || "");
+    if (!normalized) return;
+    if (normalized.length < 9 || normalized.length > 11) return;
+    set.add(normalized);
+  };
+
+  addCandidate(base);
+
+  const baseDigits = onlyDigits(base);
+  if (baseDigits.length < 11) {
+    addCandidate(baseDigits.padStart(11, "0"));
+  }
+
+  let semZeros = baseDigits;
+  while (semZeros.length > 9 && semZeros.startsWith("0")) {
+    semZeros = semZeros.slice(1);
+    addCandidate(semZeros);
+  }
+
+  if (baseDigits.length === 11) {
+    addCandidate(baseDigits.slice(1));
+    addCandidate(baseDigits.slice(2));
+  }
+
+  return Array.from(set);
+}
+
 function normalizeCnhData(dados = {}) {
-  const cnhDigits = onlyDigits(dados.cnh || "");
+  const cpfDigits = onlyDigits(dados.cpf || "") || null;
+  let cnhDigits = normalizeCnhDigits(dados.cnh || "");
+  if (cnhDigits && cpfDigits && cnhDigits === cpfDigits) {
+    cnhDigits = null;
+  }
+
+  const nomeNormalizado = normalizeOptionalText(dados.nome);
   return {
-    cpf: onlyDigits(dados.cpf || "") || null,
-    cnh: cnhDigits ? cnhDigits.slice(0, 11) : null,
-    nome: normalizeOptionalText(dados.nome),
+    cpf: cpfDigits,
+    cnh: cnhDigits || null,
+    nome: isMeaningfulName(nomeNormalizado) ? nomeNormalizado : null,
     dataNascimento: normalizeDateBR(dados.dataNascimento || "") || null,
     dataPrimeiraHabilitacao: normalizeDateBR(dados.dataPrimeiraHabilitacao || "") || null,
     validadeCnh: normalizeDateBR(dados.validadeCnh || "") || null,
@@ -494,7 +680,10 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
         erro: textoCompleto ? null : "Falha na leitura da imagem.",
       };
     } else {
-      return res.status(500).json({ error: "OCR de imagem indisponível no servidor." });
+      return res.status(500).json({
+        error:
+          "OCR de imagem indisponível no servidor. Configure GOOGLE_VISION_API_KEY ou credenciais do Google Cloud Vision.",
+      });
     }
 
     if (!result?.sucesso) {
@@ -503,6 +692,15 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
 
     const dadosCnh = normalizeCnhData(result.dados || {});
     const { cpf, cnh, nome, ...dadosCnhExtras } = dadosCnh;
+    const ocrCacheId = newJobId();
+
+    ocrJobStore.set(ocrCacheId, {
+      status: "done",
+      createdAt: Date.now(),
+      origem,
+      result: dadosCnh,
+    });
+    saveOcrTempResult(ocrCacheId, dadosCnh);
 
     // REGISTRAR LEAD (dados do OCR)
     if (cpf) {
@@ -519,7 +717,7 @@ router.post("/ocr-cnh", upload.single("doc"), async (req, res) => {
       });
     }
 
-    return res.json(dadosCnh);
+    return res.json({ ...dadosCnh, ocrCacheId });
 
   } catch (err) {
     console.error("Erro /api/ocr-cnh:", err);
@@ -535,8 +733,15 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
     const { jobId } = req.params;
     const job = ocrJobStore.get(jobId);
 
-    if (!job) return res.status(404).json({ status: "not_found" });
-    if (job.status === "done") return res.json({ status: "done", ...job.result });
+    if (!job) {
+      const tmpResult = getOcrTempResult(jobId);
+      if (tmpResult) return res.json({ status: "done", ...tmpResult });
+      return res.status(404).json({ status: "not_found" });
+    }
+    if (job.status === "done") {
+      const result = job.result || getOcrTempResult(jobId) || {};
+      return res.json({ status: "done", ...result });
+    }
 
     const bucketName = getOcrBucketName();
     if (!bucketName || !storage) return res.json({ status: "processing" });
@@ -556,6 +761,7 @@ router.get("/ocr-cnh/status/:jobId", async (req, res) => {
 
     job.status = "done";
     job.result = dadosCnh;
+    saveOcrTempResult(jobId, dadosCnh);
 
     // REGISTRAR LEAD (dados do OCR PDF)
     if (cpf) {
@@ -603,33 +809,44 @@ function isErroCertidaoRetryable(mensagem = "") {
   return /DETRAN_FAIL|2Captcha|timeout|timed out|ERR_CONNECTION|net::|ECONNRESET|ETIMEDOUT|ENOTFOUND|navigation|Target closed|Execution context was destroyed|Protocol error|indisponivel|captcha/i.test(msg);
 }
 
+function deveRetentarCertidaoNoBackend(mensagem = "", tentativa = 1, maxTentativas = 2) {
+  if (tentativa >= maxTentativas) return false;
+  if (isErroCertidaoRetryable(mensagem)) return true;
+  // O DETRAN pode recusar dados em uma tentativa e aceitar na seguinte (instabilidade/captcha).
+  return /recusou os dados|verifique cpf e cnh|cnh nao cadastrada|cpf nao cadastrado/i.test(
+    String(mensagem || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+  );
+}
+
 router.post("/consultar-certidao", async (req, res) => {
   try {
     cleanupCertidoes();
-    const { cpf, cnh, origem, dataNascimento, dataPrimeiraHabilitacao } = req.body || {};
-    const cpfDigits = onlyDigits(cpf);
-    const cnhDigits = onlyDigits(cnh);
+    const requestBody = req.body || {};
+    const { cpf, cnh, origem, dataNascimento, dataPrimeiraHabilitacao } = requestBody;
     const dataNascimentoBr = normalizeDateBR(dataNascimento);
     const dataPrimeiraHabilitacaoBr = normalizeDateBR(dataPrimeiraHabilitacao);
     const dadosCnhRecebidos = normalizeCnhData({
-      ...(req.body || {}),
-      cpf: cpfDigits,
-      cnh: cnhDigits,
-      dataNascimento: dataNascimentoBr || req.body?.dataNascimento,
-      dataPrimeiraHabilitacao: dataPrimeiraHabilitacaoBr || req.body?.dataPrimeiraHabilitacao,
+      ...requestBody,
+      dataNascimento: dataNascimentoBr || requestBody?.dataNascimento,
+      dataPrimeiraHabilitacao: dataPrimeiraHabilitacaoBr || requestBody?.dataPrimeiraHabilitacao,
     });
+    const cpfDigits = dadosCnhRecebidos.cpf || onlyDigits(cpf);
+    const cnhCandidates = buildCnhCandidatesForConsulta(dadosCnhRecebidos.cnh || cnh);
+    const cnhPrincipal = cnhCandidates[0] || null;
     const { cpf: _cpfIgnorado, cnh: _cnhIgnorado, nome: nomeCnhRecebido, ...dadosCnhExtrasRecebidos } =
       dadosCnhRecebidos;
-    const consultaKey = certidaoConsultaKey(cpfDigits, cnhDigits);
+    const consultaKey = certidaoConsultaKey(cpfDigits, cnhPrincipal);
 
-    if (!cpfDigits || !cnhDigits) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
+    if (!cpfDigits || !cnhPrincipal) return res.status(400).json({ ok: false, error: "CPF e CNH são obrigatórios." });
     if (cpfDigits.length !== 11) return res.status(400).json({ ok: false, error: "CPF inválido." });
-    if (cnhDigits.length < 9 || cnhDigits.length > 11) return res.status(400).json({ ok: false, error: "CNH inválida." });
+    if (cnhPrincipal.length < 9 || cnhPrincipal.length > 11) return res.status(400).json({ ok: false, error: "CNH inválida." });
     
     // REGISTRAR LEAD (início da consulta)
     registrarLead({
       cpf: cpfDigits,
-      cnh: cnhDigits,
+      cnh: cnhPrincipal,
       nome: nomeCnhRecebido || null,
       origem: origem || "manual",
       status: "DESCONHECIDO",
@@ -657,23 +874,52 @@ router.post("/consultar-certidao", async (req, res) => {
     // Chama a automação do Playwright com retry para instabilidades transitórias.
     let resultado;
     let ultimoErro;
-    const maxTentativas = 2;
-    for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
-      try {
-        resultado = await emitirCertidaoPDF(cpfDigits, cnhDigits);
-        break;
-      } catch (err) {
-        ultimoErro = err;
-        const mensagemErro = err?.message || String(err);
-        const retryable = isErroCertidaoRetryable(mensagemErro);
+    let cnhUsadaConsulta = cnhPrincipal;
+    const maxTentativasPorCnh = 2;
 
-        console.warn(`[DETRAN] Falha na consulta de certidao (tentativa ${tentativa}/${maxTentativas}): ${mensagemErro}`);
+    for (let idxCnh = 0; idxCnh < cnhCandidates.length && !resultado; idxCnh += 1) {
+      const cnhCandidata = cnhCandidates[idxCnh];
+      cnhUsadaConsulta = cnhCandidata;
 
-        if (!retryable || tentativa === maxTentativas) {
-          throw err;
+      for (let tentativa = 1; tentativa <= maxTentativasPorCnh; tentativa += 1) {
+        try {
+          resultado = await emitirCertidaoPDF(cpfDigits, cnhCandidata);
+          break;
+        } catch (err) {
+          ultimoErro = err;
+          const mensagemErro = err?.message || String(err);
+          const retryable = deveRetentarCertidaoNoBackend(mensagemErro, tentativa, maxTentativasPorCnh);
+          const mensagemNormalizada = String(mensagemErro || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+          const erroDados = isErroDadosCertidao(mensagemErro);
+          const cnhNaoCadastrada = /CNH NAO CADASTRADA|CNH INEXISTENTE|CNH NAO ENCONTRADA/.test(
+            mensagemNormalizada.toUpperCase()
+          );
+          const temProximaCnh = idxCnh < cnhCandidates.length - 1;
+
+          console.warn(
+            `[DETRAN] Falha na consulta de certidao (CNH ${cnhCandidata}, tentativa ${tentativa}/${maxTentativasPorCnh}): ${mensagemErro}`
+          );
+
+          if ((erroDados || cnhNaoCadastrada) && temProximaCnh && tentativa === maxTentativasPorCnh) {
+            console.warn(
+              `[DETRAN] Tentando variacao de CNH (${cnhCandidata} -> ${cnhCandidates[idxCnh + 1]}).`
+            );
+            break;
+          }
+
+          if (erroDados && tentativa < maxTentativasPorCnh) {
+            await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
+            continue;
+          }
+
+          if (!retryable || tentativa === maxTentativasPorCnh) {
+            throw err;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
         }
-
-        await new Promise((resolve) => setTimeout(resolve, 1800 * tentativa));
       }
     }
 
@@ -682,12 +928,25 @@ router.post("/consultar-certidao", async (req, res) => {
     }
 
     const { pdfBuffer, analise } = resultado;
+    const nomeFinalCertidao = normalizeOptionalText(analise.nome) || null;
+
+    if (isMeaningfulName(nomeCnhRecebido) && isMeaningfulName(nomeFinalCertidao)) {
+      const nomesCompativeis = namesAreCompatible(nomeCnhRecebido, nomeFinalCertidao);
+      if (!nomesCompativeis) {
+        console.warn(
+          `[DETRAN] Divergencia de nome detectada. OCR="${nomeCnhRecebido}" | Certidao="${nomeFinalCertidao}".`
+        );
+        throw new Error(
+          "DETRAN_FAIL: Os dados extraidos da CNH nao conferem com o nome da certidao emitida. Reenvie o documento ou digite os dados manualmente."
+        );
+      }
+    }
 
     // ATUALIZAR LEAD com dados da certidão (extraídos do HTML, não do PDF)
     registrarLead({
       cpf: cpfDigits,
-      cnh: cnhDigits,
-      nome: analise.nome || null,
+      cnh: cnhUsadaConsulta || cnhPrincipal,
+      nome: nomeFinalCertidao || nomeCnhRecebido || null,
       origem: origem || "manual",
       status: analise.status,
       motivo: analise.motivo,
@@ -707,7 +966,7 @@ router.post("/consultar-certidao", async (req, res) => {
     // Prefetch assíncrono das multas para acelerar a tela 4->6.
     // Só pré-consulta quando há ocorrência para evitar custo desnecessário de captcha.
     if (analise.temProblemas && process.env.TWOCAPTCHA_API_KEY) {
-      consultarMultasComCache(cpfDigits, cnhDigits, process.env.TWOCAPTCHA_API_KEY)
+      consultarMultasComCache(cpfDigits, cnhUsadaConsulta || cnhPrincipal, process.env.TWOCAPTCHA_API_KEY)
         .then(() => {
           console.log(`[MULTAS] Prefetch concluído para ${cpfDigits}.`);
         })
@@ -729,7 +988,7 @@ router.post("/consultar-certidao", async (req, res) => {
       tiposProcessoPrefetch.forEach((tipoProcessoPrefetch) => {
         consultarProcessoComCache(
           cpfDigits,
-          cnhDigits,
+          cnhUsadaConsulta || cnhPrincipal,
           dataNascimentoBr,
           dataPrimeiraHabilitacaoBr,
           tipoProcessoPrefetch,
@@ -754,17 +1013,24 @@ router.post("/consultar-certidao", async (req, res) => {
       temCassacao: analise.temCassacao || false,
       motivo: analise.motivo,
       status: analise.status,
-      nome: analise.nome || null,
+      nome: nomeFinalCertidao || nomeCnhRecebido || null,
       numeroCertidao: analise.numeroCertidao || null,
+      cnhConsultada: cnhUsadaConsulta || cnhPrincipal,
     };
 
     const statusCacheavel = ["OK", "MULTAS", "SUSPENSAO", "CASSACAO"].includes(payload.status);
     if (statusCacheavel) {
-      certidaoConsultaCache.set(consultaKey, {
+      const cacheItem = {
         createdAt: Date.now(),
         caseId,
         payload,
-      });
+      };
+      certidaoConsultaCache.set(consultaKey, cacheItem);
+
+      const consultaKeyFinal = certidaoConsultaKey(cpfDigits, cnhUsadaConsulta || cnhPrincipal);
+      if (consultaKeyFinal !== consultaKey) {
+        certidaoConsultaCache.set(consultaKeyFinal, cacheItem);
+      }
     } else {
       certidaoConsultaCache.delete(consultaKey);
     }
